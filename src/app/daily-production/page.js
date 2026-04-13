@@ -145,11 +145,67 @@ export default function DailyProductionPage() {
       });
       await Promise.all(invUpdates);
 
+      // Deduct raw materials from kitchen_inventory based on recipe ingredients
+      const rawMatDeductions = items.map(async (item) => {
+        if (!item.recipe_id || !item.quantity_produced) return;
+        const recipe = pageData.recipes.find(r => r.id === item.recipe_id);
+        if (!recipe) return;
+
+        // Fetch all ingredients for this recipe (and sub-recipes)
+        const recipeIds = [item.recipe_id];
+        // Also fetch sub-recipe IDs if any
+        const { data: subRecipes } = await supabase
+          .from('recipes')
+          .select('id')
+          .eq('parent_recipe_id', item.recipe_id);
+        if (subRecipes?.length > 0) {
+          recipeIds.push(...subRecipes.map(sr => sr.id));
+        }
+
+        const { data: ingredients } = await supabase
+          .from('recipe_ingredients')
+          .select('raw_material_id, quantity, unit')
+          .in('recipe_id', recipeIds);
+
+        if (!ingredients || ingredients.length === 0) return;
+
+        // Calculate scale factor: how many batches worth of ingredients to deduct
+        // If recipe yield is 24 pcs and we produced 48 pcs, scale = 2
+        const recipeYield = parseFloat(recipe.yield_qty) || 1;
+        const actualProduced = parseFloat(item.quantity_produced);
+        const scaleFactor = actualProduced / recipeYield;
+
+        // Deduct each ingredient from kitchen_inventory
+        for (const ing of ingredients) {
+          const deductQty = parseFloat(ing.quantity) * scaleFactor;
+
+          const { data: kitchenRow } = await supabase
+            .from('kitchen_inventory')
+            .select('available_qty')
+            .eq('raw_material_id', ing.raw_material_id)
+            .single();
+
+          if (kitchenRow) {
+            const currentKitchenQty = parseFloat(kitchenRow.available_qty) || 0;
+            const newKitchenQty = Math.max(0, currentKitchenQty - deductQty);
+
+            await supabase
+              .from('kitchen_inventory')
+              .update({ available_qty: newKitchenQty })
+              .eq('raw_material_id', ing.raw_material_id);
+          }
+        }
+      });
+      await Promise.all(rawMatDeductions);
+
       logAudit({ action: "production_logged", entityType: "daily_production", entityId: logData.id, description: `Daily log: ${items.length} batches, total yield ${items.reduce((s, i) => s + (parseFloat(i.quantity_produced) || 0), 0)}` });
       alert("Production log submitted!");
       setNotes(""); setSignatureData(null);
       setItems([{ id: Date.now(), recipe_id: "", mold_id: "", molds_used: "1", expected_yield: "", quantity_produced: "", waste_qty: "0", batch_number: "", unit: "pcs" }]);
       globalMutate("history-daily_production_logs");
+      globalMutate("kitchen_raw_inv");
+      globalMutate("kitchen_finished_inv");
+      globalMutate("req-raw-materials");
     } catch (err) { console.error(err); alert("Error saving production log"); }
     finally { setIsSubmitting(false); }
   };

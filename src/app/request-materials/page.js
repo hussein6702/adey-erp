@@ -4,6 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { SignaturePad } from "@/components/SignaturePad";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send, Package } from "lucide-react";
 import { logAudit } from "@/lib/audit";
 
 export default function RequestMaterialsPage() {
@@ -20,7 +21,7 @@ export default function RequestMaterialsPage() {
     async () => {
       const { data } = await supabase
         .from("raw_materials")
-        .select(`id, name, unit, current_stock, kitchen_inventory(available_qty)`)
+        .select(`id, name, unit, current_stock, low_stock_threshold, kitchen_inventory(available_qty)`)
         .order("name");
       return data || [];
     }
@@ -67,12 +68,72 @@ export default function RequestMaterialsPage() {
   if (isLoading) return <div className="flex items-center justify-center h-[400px]"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-6 max-w-4xl mx-auto">
       <div>
         <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Request Raw Materials</h2>
         <p className="text-muted-foreground text-sm">Transfer raw materials from central storage to kitchen.</p>
       </div>
 
+      {/* Current Stock Overview */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5 text-amber-600" />
+            Current Stock Overview
+          </CardTitle>
+          <CardDescription>All raw materials with their current central and kitchen stock levels.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Material</TableHead>
+                  <TableHead className="text-right">Central Stock</TableHead>
+                  <TableHead className="text-right">Kitchen Stock</TableHead>
+                  <TableHead className="text-center">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rawMaterials.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground h-20">No raw materials found.</TableCell>
+                  </TableRow>
+                ) : (
+                  rawMaterials.map((mat) => {
+                    const kitchenQty = mat.kitchen_inventory?.[0]?.available_qty || 0;
+                    const isLow = mat.current_stock <= (mat.low_stock_threshold || 0);
+                    return (
+                      <TableRow key={mat.id}>
+                        <TableCell className="font-medium">{mat.name}</TableCell>
+                        <TableCell className="text-right">
+                          <span className={isLow ? "text-destructive font-bold" : ""}>
+                            {parseFloat(mat.current_stock).toFixed(1)} {mat.unit}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          {parseFloat(kitchenQty).toFixed(1)} {mat.unit}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {isLow ? (
+                            <Badge variant="destructive" className="text-[11px]">Low</Badge>
+                          ) : mat.current_stock <= 0 ? (
+                            <Badge variant="destructive" className="text-[11px]">Out</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 text-[11px]">OK</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Transfer Form */}
       <form onSubmit={handleSubmit}>
         <Card>
           <CardHeader>
