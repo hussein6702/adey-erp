@@ -40,7 +40,7 @@ export default function TasksPage() {
 
   // ---------- Data ----------
   const { data: staffList = [] } = useSWR("tasks-staff", async () => {
-    const { data } = await supabase.from("staff").select("id, full_name, department").eq("status", "active").order("full_name");
+    const { data } = await supabase.from("staff").select("id, full_name, department, user_id").eq("status", "active").order("full_name");
     return data || [];
   });
 
@@ -119,16 +119,20 @@ export default function TasksPage() {
   };
 
   // ---------- Resolve current staff's UUID ----------
-  const myStaffRecord = staffList.find(s =>
-    s.user_id === authUser?.sub || s.full_name?.toLowerCase() === authUser?.username?.toLowerCase()
-  );
+  const myStaffRecord = staffList.find(s => {
+    if (s.user_id && authUser?.sub && s.user_id === authUser.sub) return true;
+    if (!authUser?.username || !s.full_name) return false;
+    const uName = authUser.username.toLowerCase().replace(/\s+/g, '');
+    const fName = s.full_name.toLowerCase().replace(/\s+/g, '');
+    return fName === uName || fName.includes(uName) || uName.includes(fName);
+  });
   const myStaffId = myStaffRecord?.id;
   const myDepartment = myStaffRecord?.department || authUser?.department;
 
   // ---------- Compute visible tasks ----------
   const getTasksForStaff = (staffId, dept) => {
     return tasks.filter(t => {
-      if (t.assigned_to?.includes(staffId)) return true;
+      if (staffId && t.assigned_to?.includes(staffId)) return true;
       if (t.assigned_department && t.assigned_department === dept) return true;
       if ((!t.assigned_to || t.assigned_to.length === 0) && !t.assigned_department) return true;
       return false;
@@ -137,8 +141,8 @@ export default function TasksPage() {
 
   const getFilteredView = () => {
     if (!isRoot) {
-      // Staff sees only their own tasks
-      return myStaffId ? getTasksForStaff(myStaffId, myDepartment) : [];
+      // Staff sees tasks for their ID or department
+      return getTasksForStaff(myStaffId, myDepartment);
     }
     if (filterBy === "all") return tasks;
     if (filterBy.startsWith("dept:")) {
@@ -190,6 +194,13 @@ export default function TasksPage() {
           </Button>
         )}
       </div>
+
+      {!isRoot && !myStaffId && (
+        <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl flex items-center gap-2 text-sm font-medium">
+          <AlertTriangle className="h-5 w-5 shrink-0" />
+          <p>Your login is not fully linked to a Staff profile. You can see department tasks, but cannot mark them as done. Ask an admin to link your user account in the Staff module.</p>
+        </div>
+      )}
 
       {/* Stats Row */}
       <div className="grid gap-3 grid-cols-3">

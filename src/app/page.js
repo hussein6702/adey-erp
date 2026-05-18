@@ -34,15 +34,13 @@ export default function Dashboard() {
     }).catch(() => setAuthChecked(true));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!authChecked) {
-    return <div className="flex items-center justify-center h-[400px]"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
-  }
+  // Early return moved down to respect Rules of Hooks
   const { data: stats = {
     totalProducts: 0, lowStockMaterials: 0, totalRecipes: 0,
     recentProduction: 0, activeMolds: 0, lowPackaging: 0,
     pendingPurchases: 0, todayMovements: 0
   }, isLoading } = useSWR(
-    'dashboard-stats',
+    authChecked ? 'dashboard-stats' : null,
     async () => {
       const todayDate = new Date().toISOString().split('T')[0];
       const [
@@ -81,10 +79,10 @@ export default function Dashboard() {
     }
   );
 
-  const { data: recentActivity = [] } = useSWR('recent-activity', () => getRecentActivity(10));
+  const { data: recentActivity = [] } = useSWR(authChecked ? 'recent-activity' : null, () => getRecentActivity(10));
 
   // Pending tasks — show tasks with at least one staff who hasn't completed today
-  const { data: pendingTasks = [] } = useSWR('dashboard-tasks', async () => {
+  const { data: pendingTasks = [] } = useSWR(authChecked ? 'dashboard-tasks' : null, async () => {
     const todayStr = new Date().toISOString().split('T')[0];
     
     const [tasksRes, compRes, staffRes] = await Promise.all([
@@ -113,7 +111,7 @@ export default function Dashboard() {
   });
 
   // Weekly review due-soon alerts
-  const { data: reviewAlerts = [] } = useSWR('dashboard-review-alerts', async () => {
+  const { data: reviewAlerts = [] } = useSWR(authChecked ? 'dashboard-review-alerts' : null, async () => {
     const { data } = await supabase.from('weekly_reviews').select('*').eq('is_active', true);
     if (!data) return [];
     const DAY_INDEX = { SUNDAY: 0, MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3, THURSDAY: 4, FRIDAY: 5, SATURDAY: 6 };
@@ -185,6 +183,10 @@ export default function Dashboard() {
     { title: "Main Recipes", value: stats.totalRecipes, sub: "Registered", icon: ChefHat, color: "text-emerald-700", bg: "from-emerald-50 to-teal-50" },
     { title: "Today's Production", value: stats.recentProduction, sub: "Batches logged", icon: TrendingUp, color: "text-blue-600", bg: "from-blue-50 to-indigo-50" },
   ];
+
+  if (!authChecked) {
+    return <div className="flex items-center justify-center h-[400px]"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  }
 
   return (
     <div className="space-y-6">
