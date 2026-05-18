@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Loader2, Users, UserCheck, UserX, Calendar, ChevronLeft, ChevronRight, BarChart3, CreditCard } from "lucide-react";
+import { Plus, Loader2, Users, UserCheck, UserX, Calendar, ChevronLeft, ChevronRight, BarChart3, CreditCard, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { logAudit } from "@/lib/audit";
 
@@ -41,6 +41,9 @@ export default function HRPage() {
   const [transportAllowance, setTransportAllowance] = useState("");
   const [positionAllowance, setPositionAllowance] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [oldFullName, setOldFullName] = useState("");
+  const [deleteStaff, setDeleteStaff] = useState(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
 
   const todayStr = new Date().toISOString().split("T")[0];
 
@@ -84,7 +87,7 @@ export default function HRPage() {
   const handleOpenAdd = () => { resetForm(); setIsFormOpen(true); };
   
   const handleOpenEdit = async (s) => { 
-    setEditId(s.id); setFullName(s.full_name); setRole(s.role || ""); setDepartment(s.department || ""); 
+    setEditId(s.id); setFullName(s.full_name); setOldFullName(s.full_name); setRole(s.role || ""); setDepartment(s.department || ""); 
     setBasicSalary(s.basic_salary || ""); setTransportAllowance(s.transport_allowance || ""); setPositionAllowance(s.position_allowance || "");
     setUsername(""); setPassword("");
     setIsFormOpen(true); 
@@ -120,9 +123,9 @@ export default function HRPage() {
         await supabase.from("staff").update(payload).eq("id", editId);
         
         // Update associated user credentials
-        const { data: existingUser } = await supabase.from('users').select('id').eq('full_name', fullName).maybeSingle();
+        const { data: existingUser } = await supabase.from('users').select('id').eq('full_name', oldFullName).maybeSingle();
         if (existingUser) {
-           const userUpdate = { username, department };
+           const userUpdate = { full_name: fullName, username, department };
            if (password) userUpdate.password_hash = password;
            await supabase.from('users').update(userUpdate).eq('id', existingUser.id);
         }
@@ -144,6 +147,37 @@ export default function HRPage() {
       resetForm(); setIsFormOpen(false); mutate("hr-staff");
     } catch (err) { console.error(err); alert("Failed to save"); }
     finally { setIsSubmitting(false); }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteStaff || deleteConfirmName !== deleteStaff.full_name) return;
+    setIsSubmitting(true);
+    try {
+      const { data: existingUser } = await supabase.from('users').select('id').eq('full_name', deleteStaff.full_name).maybeSingle();
+      if (existingUser) {
+        await supabase.from('users').delete().eq('id', existingUser.id);
+      }
+      
+      const { error } = await supabase.from("staff").delete().eq("id", deleteStaff.id);
+      if (error) {
+         if (error.code === '23503') {
+            alert("This staff member has related records (attendance/payroll) and cannot be hard-deleted. They will be marked as inactive instead.");
+            await supabase.from("staff").update({ status: 'inactive' }).eq("id", deleteStaff.id);
+         } else {
+            throw error;
+         }
+      }
+      
+      setDeleteStaff(null);
+      setDeleteConfirmName("");
+      mutate("hr-staff");
+      logAudit({ action: "staff_deleted", entityType: "staff", entityId: deleteStaff.id, description: `Deleted staff member: ${deleteStaff.full_name}` });
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete staff member.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getAttendanceStatusForDate = (staffId, date) => {
@@ -254,7 +288,7 @@ export default function HRPage() {
                         const remainingSick = (staff.total_sick_days || 10) - (staff.used_sick_days || 0);
                         const remainingPTO = (staff.total_pto_days || 15) - (staff.used_pto_days || 0);
                         return (
-                          <TableRow key={staff.id}>
+                          <TableRow key={staff.id} className={status === "sick_leave" ? "bg-yellow-50 border-l-4 border-l-yellow-400" : ""}>
                             <TableCell className="font-medium">{staff.full_name}</TableCell>
                             <TableCell className="text-muted-foreground hidden sm:table-cell">{staff.role || "—"}</TableCell>
                             <TableCell className="text-center">
@@ -263,7 +297,7 @@ export default function HRPage() {
                                   status === "present" ? "status-present" : 
                                   status === "absent" ? "status-absent" : 
                                   status === "vacation" ? "bg-blue-50 text-blue-700 border-blue-200" :
-                                  "status-sick"
+                                  "bg-yellow-100 text-yellow-800 border-yellow-300"
                                 }`} 
                                 variant="outline"
                               >
@@ -346,7 +380,7 @@ export default function HRPage() {
                                 status === "present" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
                                 status === "absent" ? "bg-red-50 text-red-700 border border-red-200" :
                                 status === "vacation" ? "bg-blue-50 text-blue-700 border border-blue-200" :
-                                "bg-amber-50 text-amber-700 border border-amber-200"
+                                "bg-yellow-100 text-yellow-800 border border-yellow-400"
                               }`}>
                                 {status === "present" ? "P" : status === "absent" ? "A" : status === "vacation" ? "V" : "S"}
                               </div>
@@ -397,6 +431,9 @@ export default function HRPage() {
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" onClick={() => handleOpenEdit(s)}>Edit</Button>
                           <Button variant="ghost" size="sm" onClick={() => handleSelectAnalytics(s)}>Analytics</Button>
+                          <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => { setDeleteStaff(s); setDeleteConfirmName(""); }}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -532,6 +569,35 @@ export default function HRPage() {
               <Button type="submit" disabled={isSubmitting}>{isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</> : editId ? "Update" : "Add Staff"}</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteStaff} onOpenChange={(open) => !open && setDeleteStaff(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Staff Member</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. To confirm, please type the full name of the staff member: <strong className="select-none text-black dark:text-white">{deleteStaff?.full_name}</strong>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <Input 
+              value={deleteConfirmName} 
+              onChange={(e) => setDeleteConfirmName(e.target.value)} 
+              placeholder={deleteStaff?.full_name} 
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteStaff(null); setDeleteConfirmName(""); }}>Cancel</Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteConfirm} 
+              disabled={deleteConfirmName !== deleteStaff?.full_name || isSubmitting}
+            >
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete Staff"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
-import { LayoutDashboard, TrendingUp, AlertTriangle, ChefHat, Archive, Download, Loader2, Package, Box } from "lucide-react";
+import { LayoutDashboard, TrendingUp, AlertTriangle, ChefHat, Archive, Download, Loader2, Package, Box, ListChecks, Bell, CheckCircle2 } from "lucide-react";
 import JSZip from "jszip";
 import { startOfWeek, endOfWeek, getWeek, getYear } from "date-fns";
 import { getRecentActivity, logAudit } from "@/lib/audit";
@@ -14,9 +15,28 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import Image from "next/image";
 
 export default function Dashboard() {
+  const router = useRouter();
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // Redirect non-root users to their tasks page
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(d => {
+      if (d.authenticated) {
+        const role = d.user?.role?.toLowerCase();
+        if (role !== 'root' && role !== 'admin') {
+          router.replace('/tasks');
+          return;
+        }
+      }
+      setAuthChecked(true);
+    }).catch(() => setAuthChecked(true));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!authChecked) {
+    return <div className="flex items-center justify-center h-[400px]"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  }
   const { data: stats = {
     totalProducts: 0, lowStockMaterials: 0, totalRecipes: 0,
     recentProduction: 0, activeMolds: 0, lowPackaging: 0,
@@ -63,6 +83,49 @@ export default function Dashboard() {
 
   const { data: recentActivity = [] } = useSWR('recent-activity', () => getRecentActivity(10));
 
+  // Pending tasks — show tasks with at least one staff who hasn't completed today
+  const { data: pendingTasks = [] } = useSWR('dashboard-tasks', async () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    const [tasksRes, compRes, staffRes] = await Promise.all([
+      supabase.from('daily_tasks').select('*').eq('is_active', true),
+      supabase.from('daily_task_completions').select('task_id, completed_by').eq('completed_date', todayStr),
+      supabase.from('staff').select('id, department').eq('status', 'active')
+    ]);
+    
+    const activeTasks = tasksRes.data || [];
+    const todayCompletions = compRes.data || [];
+    const allStaff = staffRes.data || [];
+
+    return activeTasks.map(task => {
+      // Who is assigned?
+      let assignedIds = task.assigned_to || [];
+      if (task.assigned_department) {
+        assignedIds = allStaff.filter(s => s.department === task.assigned_department).map(s => s.id);
+      }
+      if (assignedIds.length === 0) assignedIds = allStaff.map(s => s.id); // "everyone"
+      
+      const completedByIds = todayCompletions.filter(c => c.task_id === task.id).map(c => c.completed_by);
+      const incompleteCount = assignedIds.filter(id => !completedByIds.includes(id)).length;
+      
+      return { ...task, incompleteCount, totalAssigned: assignedIds.length };
+    }).filter(t => t.incompleteCount > 0);
+  });
+
+  // Weekly review due-soon alerts
+  const { data: reviewAlerts = [] } = useSWR('dashboard-review-alerts', async () => {
+    const { data } = await supabase.from('weekly_reviews').select('*').eq('is_active', true);
+    if (!data) return [];
+    const DAY_INDEX = { SUNDAY: 0, MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3, THURSDAY: 4, FRIDAY: 5, SATURDAY: 6 };
+    const today = new Date();
+    return data.filter(r => {
+      const targetDay = DAY_INDEX[r.fill_day] ?? 1;
+      let diff = targetDay - today.getDay();
+      if (diff <= 0) diff += 7;
+      return diff <= (r.notify_days_before || 3);
+    });
+  });
+
   const [isExporting, setIsExporting] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState(() => {
     const d = new Date();
@@ -74,7 +137,7 @@ export default function Dashboard() {
     try {
       const year = parseInt(selectedWeek.split('-W')[0]);
       const week = parseInt(selectedWeek.split('-W')[1]);
-      
+
       const d = new Date(year, 0, 1 + (week - 1) * 7);
       const start = startOfWeek(d, { weekStartsOn: 1 }).toISOString();
       const end = endOfWeek(d, { weekStartsOn: 1 }).toISOString();
@@ -127,7 +190,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <div className="hidden md:flex w-12 h-12 items-center justify-center rounded-xl bg-gradient-to-br from-amber-800 to-amber-950 p-2 shadow-md">
-          <Image src="/brownLogo.svg" alt="Adey" width={32} height={32} className="invert" />
+          <img src="/brownLogo.svg" alt="Adey" width={32} height={32} className="invert" />
         </div>
         <div>
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Dashboard</h2>
@@ -204,6 +267,51 @@ export default function Dashboard() {
               )}
             </CardContent>
           </Card>
+
+          {/* Pending Tasks Section */}
+          {pendingTasks.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ListChecks className="h-5 w-5 text-amber-600" /> Pending Tasks
+                </CardTitle>
+                <CardDescription>{pendingTasks.length} task{pendingTasks.length !== 1 ? 's' : ''} need attention</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {pendingTasks.map(task => (
+                      <div key={task.id} className="flex items-center justify-between text-sm py-2.5 px-3 rounded-lg border bg-red-50 border-red-200">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${task.priority === 'urgent' ? 'bg-red-500 animate-pulse' : task.priority === 'high' ? 'bg-orange-400' : 'bg-amber-400'}`} />
+                          <span className="truncate font-medium">{task.title}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Badge variant="outline" className="text-[10px] bg-white">
+                            {task.assigned_to?.length > 0 ? `${task.assigned_to.length} assigned` : 'Anyone'}
+                          </Badge>
+                          <span className="text-[11px] text-red-600 font-bold">
+                            INCOMPLETE
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Weekly Review Alerts */}
+          {reviewAlerts.length > 0 && (
+            <div className="flex items-center gap-3 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200/60 rounded-xl px-4 py-3 animate-fadeIn">
+              <Bell className="h-5 w-5 text-amber-500 shrink-0" />
+              <div className="text-sm">
+                <span className="font-semibold text-amber-700">Weekly Review Due Soon: </span>
+                <span className="text-amber-600">
+                  {reviewAlerts.map(r => r.title).join(', ')}
+                </span>
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="archive" className="mt-6 space-y-4">

@@ -23,10 +23,11 @@ import {
   ChevronDown,
   LogOut,
   Settings,
+  ListChecks,
+  ClipboardList,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "./ui/button";
-import Image from "next/image";
 
 // Name mappings exactly as they appear in the database for dynamic matching if needed, 
 // though we can map manually below.
@@ -77,6 +78,13 @@ const navGroups = [
     ],
   },
   {
+    label: "Reports",
+    items: [
+      { name: "Tasks & Checklist", href: "/tasks", icon: ListChecks },
+      { name: "Weekly Reviews", href: "/weekly-reviews", icon: ClipboardList },
+    ],
+  },
+  {
     label: "Management",
     items: [
       { name: "Suppliers", href: "/suppliers", icon: Users },
@@ -93,20 +101,33 @@ export function Sidebar() {
   const [isOpen, setIsOpen] = useState(false);
   const [collapsed, setCollapsed] = useState({});
   const [authContext, setAuthContext] = useState(null);
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [authLoaded, setAuthLoaded] = useState(false);
 
+  // Fetch auth ONCE on mount — Sidebar only mounts on non-login pages
+  // thanks to ClientLayout, so the cookie is guaranteed to exist here.
   useEffect(() => {
-    setIsLoadingAuth(true);
+    let cancelled = false;
     fetch('/api/auth/me')
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('Not authenticated');
+        return res.json();
+      })
       .then(data => {
-        if (data.authenticated) {
+        if (!cancelled && data.authenticated) {
           setAuthContext(data);
         }
       })
-      .catch(console.error)
-      .finally(() => setIsLoadingAuth(false));
-  }, [pathname]);
+      .catch(() => {
+        // If auth fails here, redirect to login
+        if (!cancelled) {
+          router.replace('/login');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAuthLoaded(true);
+      });
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleGroup = (label) => {
     setCollapsed((prev) => ({ ...prev, [label]: !prev[label] }));
@@ -118,13 +139,19 @@ export function Sidebar() {
     router.refresh();
   };
 
-  const canSeeModule = (itemName) => {
-    if (itemName === 'Dashboard') return true;
-    if (isLoadingAuth) return true; // Show items optimistically or just skeleton, let's show so it doesn't flicker empty
-    if (!authContext) return true;  // fallback visually 
+  const canSeeModule = useCallback((itemName) => {
+    // Always visible to everyone
+    if (['Dashboard', 'Tasks & Checklist', 'Weekly Reviews'].includes(itemName)) return true;
+    if (!authLoaded) return false;
+    if (!authContext) return false;
     if (authContext.user?.role?.toLowerCase() === 'root') return true;
     return authContext.visibleModules?.includes(itemName);
-  };
+  }, [authLoaded, authContext]);
+
+  // Close mobile drawer on navigation
+  useEffect(() => {
+    setIsOpen(false);
+  }, [pathname]);
 
   return (
     <>
@@ -149,7 +176,7 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 w-[260px] transform bg-card border-r border-border/50 transition-transform duration-300 ease-in-out md:translate-x-0 md:static md:flex md:flex-col print:hidden",
+          "fixed inset-y-0 left-0 z-40 w-[260px] transform bg-card border-r border-border/50 transition-transform duration-300 ease-in-out md:translate-x-0 md:static md:flex md:flex-col md:shrink-0 print:hidden",
           isOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -170,56 +197,64 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-1 sidebar-scroll">
-          {navGroups.map((group) => {
-            const isCollapsed = collapsed[group.label];
-            const visibleItems = group.items.filter(item => canSeeModule(item.name));
-            
-            if (visibleItems.length === 0) return null;
+          {!authLoaded ? (
+            // Skeleton loader while auth resolves — prevents layout shift
+            <div className="space-y-3 px-2 pt-2">
+              {[1,2,3,4,5].map(i => (
+                <div key={i} className="h-8 rounded-lg bg-muted/40 animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            navGroups.map((group) => {
+              const isCollapsed = collapsed[group.label];
+              const visibleItems = group.items.filter(item => canSeeModule(item.name));
 
-            return (
-              <div key={group.label} className="mb-1">
-                <button
-                  onClick={() => toggleGroup(group.label)}
-                  className="flex items-center justify-between w-full px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70 hover:text-muted-foreground transition-colors"
-                >
-                  {group.label}
-                  <ChevronDown
-                    className={cn(
-                      "h-3 w-3 transition-transform duration-200",
-                      isCollapsed && "-rotate-90"
-                    )}
-                  />
-                </button>
-                {!isCollapsed && (
-                  <div className="space-y-0.5 mt-0.5">
-                    {visibleItems.map((item) => {
-                      const isActive =
-                        pathname === item.href ||
-                        (item.href !== "/" && pathname.startsWith(item.href));
-                      const Icon = item.icon;
+              if (visibleItems.length === 0) return null;
 
-                      return (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          onClick={() => setIsOpen(false)}
-                          className={cn(
-                            "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-150",
-                            isActive
-                              ? "bg-amber-900/10 text-amber-900 shadow-sm border border-amber-200/50"
-                              : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                          )}
-                        >
-                          <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-amber-800" : "")} />
-                          <span className="truncate">{item.name}</span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              return (
+                <div key={group.label} className="mb-1">
+                  <button
+                    onClick={() => toggleGroup(group.label)}
+                    className="flex items-center justify-between w-full px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+                  >
+                    {group.label}
+                    <ChevronDown
+                      className={cn(
+                        "h-3 w-3 transition-transform duration-200",
+                        isCollapsed && "-rotate-90"
+                      )}
+                    />
+                  </button>
+                  {!isCollapsed && (
+                    <div className="space-y-0.5 mt-0.5">
+                      {visibleItems.map((item) => {
+                        const isActive =
+                          pathname === item.href ||
+                          (item.href !== "/" && pathname.startsWith(item.href));
+                        const Icon = item.icon;
+
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            className={cn(
+                              "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-150",
+                              isActive
+                                ? "bg-amber-900/10 text-amber-900 shadow-sm border border-amber-200/50"
+                                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                            )}
+                          >
+                            <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-amber-800" : "")} />
+                            <span className="truncate">{item.name}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </nav>
 
         {/* Footer */}
@@ -227,16 +262,16 @@ export function Sidebar() {
           <div className="rounded-lg bg-muted/50 px-3 py-2.5 flex items-center justify-between">
             <div className="text-left">
               <p className="text-[11px] font-medium text-muted-foreground">
-                 {isLoadingAuth ? 'Loading...' : authContext?.user?.role === 'Root' ? 'Root Access' : 'Staff View'}
+                {!authLoaded ? '...' : authContext?.user?.role === 'Root' ? 'Root Access' : authContext?.user?.department || 'Staff View'}
               </p>
               <p className="text-[9px] text-muted-foreground/60 mt-0.5">
-                 {isLoadingAuth ? '' : authContext?.user?.username || 'Guest'}
+                {authContext?.user?.username || ''}
               </p>
             </div>
             {authContext && (
-               <Button variant="ghost" size="icon" onClick={handleLogout} title="Sign Out">
-                 <LogOut className="w-4 h-4 text-red-500/80" />
-               </Button>
+              <Button variant="ghost" size="icon" onClick={handleLogout} title="Sign Out">
+                <LogOut className="w-4 h-4 text-red-500/80" />
+              </Button>
             )}
           </div>
         </div>

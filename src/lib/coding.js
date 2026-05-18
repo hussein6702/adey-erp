@@ -10,6 +10,8 @@ export function generateProductCode(category, seq) {
     bonbon: 'BON',
     truffle: 'TRF',
     bar: 'BAR',
+    bark: 'BRK',
+    tablet: 'TAB',
     praline: 'PRA',
     other: 'OTH',
   };

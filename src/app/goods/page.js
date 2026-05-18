@@ -55,12 +55,11 @@ export default function GoodsPage() {
   const [yieldQty, setYieldQty] = useState('10');
   const [yieldUnit, setYieldUnit] = useState('pcs');
   const [recipeNotes, setRecipeNotes] = useState('');
-  const [ingredients, setIngredients] = useState([]); // [{ id, raw_material_id, name, unit, quantity, bakers_pct }]
+  const [ingredients, setIngredients] = useState([]); // [{ id, raw_material_id, name, unit, quantity }]
   
   // Mini form state for adding an ingredient inline
   const [selectedRawMatId, setSelectedRawMatId] = useState("none");
   const [addingQty, setAddingQty] = useState("");
-  const [addingBakersPct, setAddingBakersPct] = useState("");
   const [selectedMoldId, setSelectedMoldId] = useState("none");
   const [gramsPerPiece, setGramsPerPiece] = useState("");
 
@@ -122,9 +121,7 @@ export default function GoodsPage() {
     setIngredients([]);
     setSelectedRawMatId("none");
     setAddingQty('');
-    setAddingBakersPct('');
     setSelectedMoldId("none");
-    setGramsPerPiece("");
   };
 
   const handleCreateCompleteItem = async (e) => {
@@ -161,7 +158,7 @@ export default function GoodsPage() {
           raw_material_id: ing.raw_material_id,
           quantity: parseFloat(ing.quantity),
           unit: ing.unit,
-          baker_percentage: ing.bakers_pct ? parseFloat(ing.bakers_pct) : null,
+          baker_percentage: null,
           is_main_ingredient: idx === 0,
           sort_order: idx + 1
         }));
@@ -191,11 +188,9 @@ export default function GoodsPage() {
       name: mat.name,
       unit: mat.unit,
       quantity: addingQty,
-      bakers_pct: addingBakersPct
     }]);
     setSelectedRawMatId("none");
     setAddingQty("");
-    setAddingBakersPct("");
   };
 
   const handleRemoveInlineIngredient = (tempId) => {
@@ -227,7 +222,7 @@ export default function GoodsPage() {
           raw_material_id: ing.raw_material_id,
           quantity: parseFloat(ing.quantity),
           unit: ing.unit,
-          baker_percentage: ing.bakers_pct ? parseFloat(ing.bakers_pct) : null,
+          baker_percentage: null,
           is_main_ingredient: idx === 0,
           sort_order: idx + 1
         }));
@@ -592,7 +587,12 @@ export default function GoodsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="category">Category</Label>
-                  <Select value={category} onValueChange={setCategory}>
+                  <Select value={category} onValueChange={(val) => {
+                    setCategory(val);
+                    if (val === 'bark' || val === 'tablet') {
+                      setYieldUnit('g');
+                    }
+                  }}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
@@ -600,6 +600,8 @@ export default function GoodsPage() {
                       <SelectItem value="bonbon">Bonbon</SelectItem>
                       <SelectItem value="truffle">Truffle</SelectItem>
                       <SelectItem value="bar">Bar</SelectItem>
+                      <SelectItem value="bark">Bark</SelectItem>
+                      <SelectItem value="tablet">Tablet</SelectItem>
                       <SelectItem value="praline">Praline</SelectItem>
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
@@ -635,6 +637,7 @@ export default function GoodsPage() {
                     <SelectContent>
                       <SelectItem value="pcs">Pieces (use mold)</SelectItem>
                       <SelectItem value="g">Grams</SelectItem>
+                      <SelectItem value="kg">Kilograms</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -772,6 +775,8 @@ export default function GoodsPage() {
                   <SelectItem value="bonbon">Bonbon</SelectItem>
                   <SelectItem value="truffle">Truffle</SelectItem>
                   <SelectItem value="bar">Bar</SelectItem>
+                  <SelectItem value="bark">Bark</SelectItem>
+                  <SelectItem value="tablet">Tablet</SelectItem>
                   <SelectItem value="praline">Praline</SelectItem>
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
@@ -824,6 +829,7 @@ export default function GoodsPage() {
                   <SelectContent>
                     <SelectItem value="pcs">Pieces (use mold)</SelectItem>
                     <SelectItem value="g">Grams</SelectItem>
+                    <SelectItem value="kg">Kilograms</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -875,7 +881,6 @@ export default function GoodsPage() {
                        <TableRow>
                          <TableHead>Ingredient</TableHead>
                          <TableHead className="text-right">Qty</TableHead>
-                         <TableHead className="text-right">%</TableHead>
                          <TableHead className="w-[50px]"></TableHead>
                        </TableRow>
                      </TableHeader>
@@ -884,7 +889,6 @@ export default function GoodsPage() {
                          <TableRow key={ing.id}>
                            <TableCell>{ing.name}</TableCell>
                            <TableCell className="text-right">{ing.quantity} {ing.unit}</TableCell>
-                           <TableCell className="text-right">{ing.bakers_pct ? `${ing.bakers_pct}%` : '-'}</TableCell>
                            <TableCell>
                              <Button type="button" variant="ghost" size="icon" onClick={() => handleRemoveInlineIngredient(ing.id)}>
                                 <Trash2 className="h-4 w-4 text-destructive" />

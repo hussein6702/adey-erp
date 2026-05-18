@@ -16,6 +16,7 @@ import { logAudit } from "@/lib/audit";
 import { MOVEMENT_CODES } from "@/lib/coding";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { PrintablePreview } from "@/components/PrintLayout";
+import { formatDynamicQty } from "@/lib/unitConversion";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -136,6 +137,18 @@ export default function RawMaterialsPage() {
       alert('Failed to update material');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("Are you sure you want to delete this raw material?")) return;
+    try {
+      const { error } = await supabase.from("raw_materials").delete().eq("id", id);
+      if (error) throw error;
+      mutate('raw-materials');
+    } catch (err) {
+      console.error("Error deleting raw material:", err);
+      alert("Failed to delete raw material. It might be referenced in other records.");
     }
   };
 
@@ -276,11 +289,11 @@ export default function RawMaterialsPage() {
                         <TableCell className="font-medium">{item.name}</TableCell>
                         <TableCell className="text-right">
                           <span className={isLow ? "text-destructive font-bold" : ""}>
-                            {item.current_stock} {item.unit}
+                            {formatDynamicQty(item.current_stock, item.unit)}
                           </span>
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground hidden sm:table-cell">
-                          {kitchenQty} {item.unit}
+                          {formatDynamicQty(kitchenQty, item.unit)}
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex flex-col items-center">
@@ -400,8 +413,11 @@ export default function RawMaterialsPage() {
                 <Select value={unit} onValueChange={setUnit}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="g">g</SelectItem>
-                    <SelectItem value="pcs">pcs</SelectItem>
+                    <SelectItem value="g">g (grams)</SelectItem>
+                    <SelectItem value="kg">kg (kilograms)</SelectItem>
+                    <SelectItem value="mL">mL (millilitres)</SelectItem>
+                    <SelectItem value="L">L (litres)</SelectItem>
+                    <SelectItem value="pcs">pcs (pieces)</SelectItem>
                     <SelectItem value="box">box</SelectItem>
                   </SelectContent>
                 </Select>
@@ -459,8 +475,11 @@ export default function RawMaterialsPage() {
                 <Select value={editUnit} onValueChange={setEditUnit}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="g">g</SelectItem>
-                    <SelectItem value="pcs">pcs</SelectItem>
+                    <SelectItem value="g">g (grams)</SelectItem>
+                    <SelectItem value="kg">kg (kilograms)</SelectItem>
+                    <SelectItem value="mL">mL (millilitres)</SelectItem>
+                    <SelectItem value="L">L (litres)</SelectItem>
+                    <SelectItem value="pcs">pcs (pieces)</SelectItem>
                     <SelectItem value="box">box</SelectItem>
                   </SelectContent>
                 </Select>

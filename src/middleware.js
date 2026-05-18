@@ -3,59 +3,59 @@ import { jwtVerify } from 'jose';
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'fallback-secret-here-123456');
 
+const PUBLIC_ROUTES = ['/login'];
+
 export async function middleware(req) {
+  const { pathname } = req.nextUrl;
   const token = req.cookies.get('adey_auth_token')?.value;
+  const isPublicRoute = PUBLIC_ROUTES.some(route => pathname === route || pathname.startsWith(route + '/'));
 
-  const publicRoutes = ['/login'];
-  const isPublicRoute = publicRoutes.some(route => req.nextUrl.pathname.startsWith(route));
+  // 1. Public routes without a token — let them through immediately
+  if (isPublicRoute && !token) {
+    return NextResponse.next();
+  }
 
-  if (!token && !isPublicRoute) {
+  // 2. No token and not public — redirect to login
+  if (!token) {
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
-  if (token) {
-    try {
-      const { payload } = await jwtVerify(token, JWT_SECRET);
-      
-      // If going to login while authenticated, redirect to root
-      if (isPublicRoute) {
-        return NextResponse.redirect(new URL('/', req.url));
-      }
+  // 3. Has a token — verify it
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET);
 
-      // We can also add department headers or role logic if wanted later.
-      const requestHeaders = new Headers(req.headers);
-      requestHeaders.set('x-user-role', payload.role || 'Staff');
-      requestHeaders.set('x-user-department', payload.department || 'None');
-      requestHeaders.set('x-user-username', payload.username || '');
-      
-      return NextResponse.next({
-        request: {
-          headers: requestHeaders,
-        },
-      });
-
-    } catch (err) {
-      console.error('Invalid token:', err);
-      if (!isPublicRoute) {
-        const response = NextResponse.redirect(new URL('/login', req.url));
-        response.cookies.delete('adey_auth_token');
-        return response;
-      }
+    // Authenticated user visiting login → send to dashboard
+    if (isPublicRoute) {
+      return NextResponse.redirect(new URL('/', req.url));
     }
-  }
 
-  return NextResponse.next();
+    // Attach user context to headers for downstream use
+    const requestHeaders = new Headers(req.headers);
+    requestHeaders.set('x-user-role', payload.role || 'Staff');
+    requestHeaders.set('x-user-department', payload.department || 'None');
+    requestHeaders.set('x-user-username', payload.username || '');
+
+    return NextResponse.next({
+      request: { headers: requestHeaders },
+    });
+  } catch (err) {
+    // Token invalid/expired — clear it and redirect to login
+    const response = isPublicRoute
+      ? NextResponse.next()
+      : NextResponse.redirect(new URL('/login', req.url));
+    response.cookies.delete('adey_auth_token');
+    return response;
+  }
 }
 
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes, some might need protection but we protect those internally)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
+     * Match all paths except:
+     * - api routes
+     * - Next.js internals (_next/)
+     * - Static assets (favicon, images, svgs)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+    '/((?!api|_next/static|_next/image|_next/webpack-hmr|favicon\\.ico|.*\\.svg$).*)',
   ],
 };

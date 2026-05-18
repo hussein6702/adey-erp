@@ -131,7 +131,7 @@ export default function PurchaseRequestsPage() {
                     <Label>Unit</Label>
                     <Select value={unit} onValueChange={setUnit}><SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="pcs">pcs</SelectItem><SelectItem value="g">g</SelectItem>
+                        <SelectItem value="pcs">pcs</SelectItem><SelectItem value="g">g</SelectItem><SelectItem value="kg">kg</SelectItem>
                         <SelectItem value="L">L</SelectItem><SelectItem value="box">box</SelectItem><SelectItem value="rolls">rolls</SelectItem>
                       </SelectContent>
                     </Select>

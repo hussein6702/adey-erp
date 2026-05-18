@@ -91,7 +91,7 @@ export default function PayrollPage() {
   };
 
   const updateRow = (staffId, field, value) => {
-    setPayrollData(payrollData.map(row => 
+    setPayrollData(payrollData.map(row =>
       row.staff_id === staffId ? { ...row, [field]: value } : row
     ));
   };
@@ -135,11 +135,11 @@ export default function PayrollPage() {
       const { error: rError } = await supabase.from("payroll_records").insert(records);
       if (rError) throw rError;
 
-      logAudit({ 
-        action: "payroll_generated", 
-        entityType: "payroll", 
-        entityId: period.id, 
-        description: `Generated payroll for ${periodName}` 
+      logAudit({
+        action: "payroll_generated",
+        entityType: "payroll",
+        entityId: period.id,
+        description: `Generated payroll for ${periodName}`
       });
 
       alert(`Payroll for ${periodName} saved!`);
@@ -253,7 +253,7 @@ export default function PayrollPage() {
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
-          <HistoryPanel 
+          <HistoryPanel
             title="Payroll History"
             tableName="payroll_periods"
             selectQuery="*, payroll_records(staff_id, net_pay, total_addition, total_deduction, staff(full_name))"
@@ -299,7 +299,7 @@ export default function PayrollPage() {
                 </div>
               </PrintablePreview>
             )}
-           />
+          />
         </TabsContent>
       </Tabs>
     </div>

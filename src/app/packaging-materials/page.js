@@ -286,7 +286,7 @@ export default function PackagingMaterialsPage() {
                 <Select value={unit} onValueChange={setUnit}><SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="pcs">pcs</SelectItem><SelectItem value="meters">meters</SelectItem>
-                    <SelectItem value="rolls">rolls</SelectItem><SelectItem value="box">box</SelectItem><SelectItem value="g">g</SelectItem>
+                    <SelectItem value="rolls">rolls</SelectItem><SelectItem value="box">box</SelectItem><SelectItem value="g">g</SelectItem><SelectItem value="kg">kg</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
