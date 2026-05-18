@@ -107,15 +107,20 @@ export default function TasksPage() {
   const markComplete = async (taskId, staffId) => {
     try {
       const note = (noteInputs[taskId] || "").slice(0, 50);
-      await supabase.from("daily_task_completions").insert({
+      const { error } = await supabase.from("daily_task_completions").insert({
         task_id: taskId,
         completed_by: staffId,
         completed_date: todayStr,
         note: note || null,
       });
+      if (error) {
+        console.error("Insert error:", error);
+        alert("Failed to mark task as done: " + error.message);
+        return;
+      }
       setNoteInputs(prev => ({ ...prev, [taskId]: "" }));
       mutate(`completions-${todayStr}`);
-    } catch (err) { console.error(err); }
+    } catch (err) { console.error(err); alert("An unexpected error occurred."); }
   };
 
   // ---------- Resolve current staff's UUID ----------
