@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/data-table";
-import { Modal, Button, GhostButton, Field, inputCls, Badge, ThreeDots, SearchableSelect, useToast } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, Badge, ThreeDots, SearchableSelect, useToast } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { usePrint, PrintPortal } from "@/components/print";
 import DocHeader from "@/components/doc-header";
 import GrnModal from "@/components/grn-modal";
+import { usePersistentState } from "@/lib/form-state";
 
 const STATUS_COLORS = { pending: "yellow", approved: "green", declined: "red" };
 const CATEGORY_LABELS = { raw_material: "Raw Materials", packaging: "Packaging", consumable: "Consumables" };
@@ -25,13 +26,18 @@ export default function PurchaseRequestsPage() {
   const { node: printNode, print: printDoc, clear: clearPrint } = usePrint();
 
   // Submit form state
-  const [mode, setMode] = useState("existing"); // existing | custom
-  const [itemId, setItemId] = useState("");
-  const [itemName, setItemName] = useState("");
-  const [quantity, setQuantity] = useState(1);
-  const [unit, setUnit] = useState("piece");
-  const [notes, setNotes] = useState("");
+  const [mode, setMode] = usePersistentState("draft.purchase-request.mode", "existing"); // existing | custom
+  const [itemId, setItemId] = usePersistentState("draft.purchase-request.itemId", "");
+  const [itemName, setItemName] = usePersistentState("draft.purchase-request.itemName", "");
+  const [quantity, setQuantity] = usePersistentState("draft.purchase-request.quantity", 1);
+  const [unit, setUnit] = usePersistentState("draft.purchase-request.unit", "piece");
+  const [notes, setNotes] = usePersistentState("draft.purchase-request.notes", "");
   const [submitting, setSubmitting] = useState(false);
+
+  const clearRequest = () => {
+    setMode("existing"); setItemId(""); setItemName(""); setQuantity(1); setUnit("piece"); setNotes("");
+    ["mode", "itemId", "itemName", "quantity", "unit", "notes"].forEach((name) => localStorage.removeItem(`draft.purchase-request.${name}`));
+  };
 
   const requestableItems = useMemo(
     () => (items || []).filter((it) => it.category === "consumable" || it.category === "packaging"),
@@ -290,7 +296,9 @@ export default function PurchaseRequestsPage() {
         <div className="max-w-2xl space-y-4">
           <div className="rounded-xl border-[0.5px] border-zinc-300 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-semibold text-zinc-900 dark:text-white">New Purchase Request</span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-zinc-900 dark:text-white">New Purchase Request</span>
+              </div>
               <div className="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700">
                 {[
                   { key: "existing", label: "Existing material" },
@@ -343,6 +351,7 @@ export default function PurchaseRequestsPage() {
             </Field>
 
             <div className="mt-4 flex justify-end">
+              <ClearButton onClick={clearRequest} />
               <Button color="green" onClick={submitRequest} disabled={submitting}>
                 {submitting ? "Submitting…" : "Submit Request"}
               </Button>
@@ -360,6 +369,7 @@ export default function PurchaseRequestsPage() {
       {tab === "mine" && (
         <DataTable
           columns={columns}
+          id="purchase-history"
           rows={mine}
           empty="You haven't submitted any purchase requests yet"
           searchText={reqSearch}

@@ -14,6 +14,7 @@ export default function DataTable({
   searchText,
   searchPlaceholder = "Search…",
   sortByDate,
+  id,
 }) {
   const [search, setSearch] = useState("");
   const [sortDir, setSortDir] = useState("desc");
@@ -46,7 +47,7 @@ export default function DataTable({
   const firstDataKey = columns.find((c) => c.key !== "actions" && !c.hideOnMobile)?.key;
 
   return (
-    <div>
+    <div id={id}>
       {(action || searchText || sortByDate) && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
           {searchText && (

@@ -124,7 +124,7 @@ export function grnHtml(g) {
   const fmt = (n, c) =>
     `${["AED", "ETB", "USD"].includes(c) ? { AED: "AED ", ETB: "Br ", USD: "$" }[c] : ""}${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   return shell({
-    title: "Goods Received Note",
+    title: "Goods Receiving Note",
     docNumber: `GRN #${g.doc_number}`,
     date: fmtDate(g.grn_date),
     body: `${metaGrid([
@@ -167,7 +167,7 @@ export function deliveryHtml(d) {
     ])}
     ${itemsTable(
       ["Item", "Quantity", "Unit"],
-      (d.items || []).map((li) => [li.item?.name || "—", li.quantity, li.unit])
+      (d.items || []).map((li) => [li.product?.name || li.item?.name || "—", li.quantity, li.unit])
     )}
     ${notes(d.notes)}
     ${signs([
@@ -189,13 +189,16 @@ export function productionSheetHtml(s) {
       ["Actual good yield", `${s.actual_yield} ${s.yield_unit}`],
     ])}
     ${itemsTable(
-      ["Material", "Qty", "Unit", "%", "GRN"],
+      ["Material", "Qty", "Unit", "%", "Source DN"],
       (s.ingredients || []).map((ing) => [
         `${ing.is_base_ingredient ? "★ " : ""}${ing.item?.name || "—"}`,
         ing.quantity,
         ing.unit,
         `${ing.percentage}%`,
-        ing.grns ? `#${ing.grns.doc_number}` : "—",
+        (() => {
+          const dn = Array.isArray(ing.delivery_notes) ? ing.delivery_notes[0] : ing.delivery_notes;
+          return dn?.doc_number ? `DN-#${dn.doc_number}` : "—";
+        })(),
       ])
     )}
     ${totals([["Damaged / Waste", `${s.damaged_qty || 0} ${s.yield_unit}`]])}

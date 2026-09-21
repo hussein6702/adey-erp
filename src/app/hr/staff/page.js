@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, Clock, Palmtree, Pill } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/data-table";
-import { Modal, Button, GhostButton, Field, inputCls, Badge, ThreeDots, useToast } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, Badge, ThreeDots, useToast } from "@/components/ui";
 import { DEPARTMENTS } from "@/lib/navigation";
 import { useAuth, hashPassword } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -631,6 +631,7 @@ export default function StaffPage() {
       {activeTab === "list" ? (
         <DataTable
           columns={columns}
+          id="staff-history"
           rows={staffList}
           empty="No staff members yet"
           searchText={(u) => [u.full_name, u.username, u.staff_role, u.department, u.tin_number, u.bank_account, u.fayda_number].join(" ")}
@@ -827,6 +828,7 @@ export default function StaffPage() {
                 <Field label="Role">
                   <select className={inputCls} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
                     <option value="staff">Staff</option>
+                    <option value="manager">Manager</option>
                     <option value="root">Root</option>
                   </select>
                 </Field>
@@ -911,6 +913,7 @@ export default function StaffPage() {
           )}
 
           <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <ClearButton onClick={() => setForm(emptyForm())} />
             <GhostButton onClick={() => setShowModal(false)}>Cancel</GhostButton>
             <Button color="green" onClick={save}>{editing ? "Save Changes" : "Create Staff"}</Button>
           </div>
@@ -983,6 +986,7 @@ export default function StaffPage() {
               </Field>
             </div>
             <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <ClearButton onClick={() => setCredForm({ username: "", password: "" })} />
               <GhostButton onClick={() => setCredentialsStaff(null)}>Cancel</GhostButton>
               <Button color="green" onClick={saveCredentials}>Save Credentials</Button>
             </div>
@@ -1105,6 +1109,7 @@ export default function StaffPage() {
             })()}
 
             <div className="flex justify-end gap-2 pt-2">
+              <ClearButton onClick={() => setMark(null)} />
               <GhostButton onClick={() => setMark(null)}>Cancel</GhostButton>
               <Button color="green" onClick={saveMark}>Save</Button>
             </div>

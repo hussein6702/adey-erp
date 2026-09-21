@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/data-table";
-import { Modal, Button, GhostButton, Field, inputCls, ThreeDots, Badge, useToast, SearchableSelect } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, ThreeDots, Badge, useToast, SearchableSelect } from "@/components/ui";
+import { usePersistentState } from "@/lib/form-state";
 
 export default function ProductsListPage() {
   const toast = useToast();
@@ -18,7 +19,7 @@ export default function ProductsListPage() {
   const [editing, setEditing] = useState(null);
 
   // Form states
-  const [productForm, setProductForm] = useState({
+  const [productForm, setProductForm, clearProductForm] = usePersistentState("draft.product", {
     name: "",
     category_id: "",
     mold_id: "",
@@ -27,7 +28,7 @@ export default function ProductsListPage() {
     description: "",
   });
 
-  const [categoryForm, setCategoryForm] = useState({
+  const [categoryForm, setCategoryForm, clearCategoryForm] = usePersistentState("draft.product-category", {
     name: "",
     description: "",
   });
@@ -55,14 +56,9 @@ export default function ProductsListPage() {
   // Product Actions
   const openNewProduct = () => {
     setEditing(null);
-    setProductForm({
-      name: "",
-      category_id: categories[0]?.id || "",
-      mold_id: "",
-      sku: "",
-      unit: "piece",
-      description: "",
-    });
+    if (!productForm.name && !productForm.sku && !productForm.description) {
+      setProductForm({ name: "", category_id: categories[0]?.id || "", mold_id: "", sku: "", unit: "piece", description: "" });
+    }
     setShowProductModal(true);
   };
 
@@ -103,6 +99,7 @@ export default function ProductsListPage() {
       else toast("Product created");
     }
 
+    clearProductForm();
     setShowProductModal(false);
     loadData();
   };
@@ -136,7 +133,7 @@ export default function ProductsListPage() {
       toast(error.message, "error");
     } else {
       toast(`Category "${data.name}" created`);
-      setCategoryForm({ name: "", description: "" });
+      clearCategoryForm();
       setShowCategoryModal(false);
       await loadData();
       if (data?.id) {
@@ -240,6 +237,7 @@ export default function ProductsListPage() {
       {/* Data Table */}
       <DataTable
         columns={columns}
+        id="products-history"
         rows={filteredProducts}
         empty="No products found in this category"
         searchText={(p) => [p.name, p.sku, p.category?.name, p.mold?.name].join(" ")}
@@ -323,6 +321,7 @@ export default function ProductsListPage() {
           </Field>
 
           <div className="flex justify-end gap-2 pt-2">
+            <ClearButton onClick={clearProductForm} />
             <GhostButton onClick={() => setShowProductModal(false)}>Cancel</GhostButton>
             <Button onClick={saveProduct}>{editing ? "Save Changes" : "Create Product"}</Button>
           </div>
@@ -355,7 +354,8 @@ export default function ProductsListPage() {
           </Field>
 
           <div className="flex justify-end gap-2 pt-2">
-            <GhostButton onClick={() => setShowCategoryModal(false)}>Cancel</GhostButton>
+              <ClearButton onClick={clearCategoryForm} />
+              <GhostButton onClick={() => setShowCategoryModal(false)}>Cancel</GhostButton>
             <Button onClick={saveCategory}>Save Category</Button>
           </div>
         </div>

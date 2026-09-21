@@ -21,7 +21,7 @@ export const NAV_SECTIONS = [
   {
     group: "Forms",
     links: [
-      { key: "forms-grns", label: "GRNs", href: "/inventory/grns" },
+      { key: "forms-grns", label: "Goods Receiving Notes", href: "/inventory/grns" },
       { key: "forms-delivery-note", label: "Delivery Note", href: "/inventory/delivery-note" },
       { key: "forms-purchase-requests", label: "Purchase Requests", href: "/inventory/purchase-requests" },
       { key: "forms-daily-production-log", label: "Daily Production Log", href: "/kitchen/daily-production-log" },

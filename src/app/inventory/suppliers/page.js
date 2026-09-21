@@ -15,14 +15,15 @@ export default function SuppliersPage() {
 
   const load = useCallback(async () => {
     const [{ data: sups }, { data: items }] = await Promise.all([
-      supabase.from("suppliers").select("*, items(id,name)"),
+      supabase.from("suppliers").select("*"),
       supabase.from("items").select("id,name,supplier_id"),
     ]);
+    const { data: associations } = await supabase.from("item_suppliers").select("item_id,supplier_id");
     const withLastGrn = await Promise.all(
       (sups || []).map(async (s) => {
         const { data } = await supabase
           .from("grns").select("grn_date").eq("supplier_id", s.id).order("grn_date", { ascending: false }).limit(1);
-        return { ...s, items: (items || []).filter((i) => i.supplier_id === s.id), lastGrn: data?.[0]?.grn_date || null };
+        return { ...s, items: (items || []).filter((i) => i.supplier_id === s.id || (associations || []).some((x) => x.item_id === i.id && x.supplier_id === s.id)), lastGrn: data?.[0]?.grn_date || null };
       })
     );
     setSuppliers(withLastGrn);
@@ -70,6 +71,7 @@ export default function SuppliersPage() {
 
       <DataTable
         columns={columns}
+        id="suppliers-history"
         rows={suppliers}
         empty="No suppliers yet"
         searchText={(s) => [s.name, s.country, s.email, (s.items || []).map((i) => i.name).join(" ")].join(" ")}

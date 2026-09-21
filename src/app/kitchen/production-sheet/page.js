@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/data-table";
-import { Modal, Button, GhostButton, Field, inputCls, ThreeDots, Badge, useToast, SearchableSelect } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, ThreeDots, Badge, useToast, SearchableSelect } from "@/components/ui";
 import { usePrint, PrintPortal } from "@/components/print";
 import DocHeader from "@/components/doc-header";
 import { productionSheetName, formatDate } from "@/lib/utils";
 import { toBaseUnits, formatStock, formatQty } from "@/lib/units";
+import { usePersistentState } from "@/lib/form-state";
 
 export default function ProductionSheetPage() {
   const toast = useToast();
@@ -56,15 +57,20 @@ export default function ProductionSheetPage() {
                 <td className="py-2.5 font-medium text-zinc-900">{ing.item?.name || "—"}</td>
                 <td className="py-2.5 text-right text-zinc-900">{ing.quantity} g</td>
                 <td className="py-2.5 text-right text-zinc-700">{ing.percentage}%</td>
-                <td className="py-2.5 text-right text-zinc-700">{ing.delivery_notes ? `DN-#${ing.delivery_notes.doc_number}` : "—"}</td>
+                <td className="py-2.5 text-right text-zinc-700">
+                  {(() => {
+                    const dn = Array.isArray(ing.delivery_notes) ? ing.delivery_notes[0] : ing.delivery_notes;
+                    return dn?.doc_number ? `DN-#${dn.doc_number}` : "—";
+                  })()}
+                </td>
               </tr>
             ))}
         </tbody>
       </table>
       {(() => {
         const usedDns = (s.ingredients || [])
-          .filter((ing) => ing.delivery_notes)
-          .map((ing) => ing.delivery_notes)
+          .map((ing) => (Array.isArray(ing.delivery_notes) ? ing.delivery_notes[0] : ing.delivery_notes))
+          .filter(Boolean)
           .filter((d, idx, arr) => arr.findIndex((x) => x.doc_number === d.doc_number) === idx);
         if (usedDns.length === 0) return null;
         return (
@@ -105,7 +111,7 @@ export default function ProductionSheetPage() {
   };
 
   // Form State
-  const [form, setForm] = useState({
+  const [form, setForm, clearForm] = usePersistentState("draft.production-sheet", {
     recipe_id: "",
     batch_multiplier: 1,
     actual_yield: 20,
@@ -145,8 +151,6 @@ export default function ProductionSheetPage() {
       supabase
         .from("delivery_notes")
         .select("id, doc_number, created_at, destination, category, items:delivery_note_items(item_id, quantity, unit)")
-        .eq("destination", "kitchen")
-        .in("category", ["raw_material", "consumable"])
         .order("created_at", { ascending: false }),
       supabase.from("users").select("id, full_name, username, department").order("full_name"),
     ]);
@@ -172,15 +176,15 @@ export default function ProductionSheetPage() {
     return recIngs.map((ing, idx) => {
       const existing = existingIngredients[idx];
       // Find delivery notes that delivered this item to the kitchen
-      const itemDns = deliveryNotes.filter((dn) => (dn.items || []).some((di) => di.item_id === ing.item_id));
+      const itemDns = deliveryNotes.filter((dn) => (dn.items || []).some((di) => String(di.item_id) === String(ing.item_id)));
 
       const percentage = ing.percentage != null
         ? Number(ing.percentage)
         : totalRecQty > 0
-        ? Math.round(((Number(ing.quantity) || 0) / totalRecQty) * 100)
+        ? Number((((Number(ing.quantity) || 0) / totalRecQty) * 100).toFixed(2))
         : 50;
 
-      const calculatedGrams = Math.round((percentage / 100) * totalBatchGrams);
+      const calculatedGrams = Number(((percentage / 100) * totalBatchGrams).toFixed(2));
 
       return {
         item_id: ing.item_id,
@@ -199,10 +203,11 @@ export default function ProductionSheetPage() {
     if (!rec) return;
     const defaultBatchGrams = 1000;
     const ingredients = buildIngredients(rec, defaultBatchGrams);
+    const moldCavities = Number(rec.mold?.cavities) || Number(rec.expected_yield_qty) || 1;
     setForm({
       recipe_id: recipeId,
       batch_multiplier: 1,
-      actual_yield: rec.expected_yield_qty || 20,
+      actual_yield: moldCavities,
       damaged_qty: 0,
       yield_unit: rec.expected_yield_unit || "piece",
       notes: "",
@@ -220,10 +225,11 @@ export default function ProductionSheetPage() {
         const totalBatchGrams = 1000 * mult;
         updatedIngredients = buildIngredients(rec, totalBatchGrams, prev.ingredients);
       }
+      const moldCavities = Number(rec?.mold?.cavities) || Number(rec?.expected_yield_qty) || 1;
       return {
         ...prev,
         batch_multiplier: mult,
-        actual_yield: rec ? Math.round(rec.expected_yield_qty * mult) : prev.actual_yield,
+        actual_yield: rec ? Number((moldCavities * mult).toFixed(2)) : prev.actual_yield,
         ingredients: updatedIngredients,
       };
     });
@@ -248,7 +254,7 @@ export default function ProductionSheetPage() {
               return { ...ing, quantity: changedQty };
             }
             const ingPct = Number(ing.percentage) || 0;
-            const newGrams = Math.round(impliedTotalGrams * (ingPct / 100));
+            const newGrams = Number((impliedTotalGrams * (ingPct / 100)).toFixed(2));
             return { ...ing, quantity: newGrams };
           });
 
@@ -258,7 +264,7 @@ export default function ProductionSheetPage() {
           return {
             ...prev,
             batch_multiplier: newMultiplier,
-            actual_yield: rec ? Math.round(rec.expected_yield_qty * newMultiplier) : prev.actual_yield,
+            actual_yield: rec ? Number(((Number(rec.mold?.cavities) || Number(rec.expected_yield_qty) || 1) * newMultiplier).toFixed(2)) : prev.actual_yield,
             ingredients: scaledIngredients,
           };
         }
@@ -303,17 +309,8 @@ export default function ProductionSheetPage() {
     }
     const firstRec = recipes[0];
     const ingredients = buildIngredients(firstRec, 1000);
-    setForm({
-      recipe_id: firstRec.id,
-      batch_multiplier: 1,
-      actual_yield: firstRec.expected_yield_qty || 20,
-      damaged_qty: 0,
-      yield_unit: firstRec.expected_yield_unit || "piece",
-      supervisor: "",
-      notes: "",
-      is_tweaked: false,
-      ingredients,
-    });
+    const moldCavities = Number(firstRec.mold?.cavities) || Number(firstRec.expected_yield_qty) || 1;
+    if (!form.recipe_id && form.ingredients.length === 0) setForm({ recipe_id: firstRec.id, batch_multiplier: 1, actual_yield: moldCavities, damaged_qty: 0, yield_unit: firstRec.expected_yield_unit || "piece", supervisor: "", notes: "", is_tweaked: false, ingredients });
     setShowModal(true);
   };
 
@@ -401,7 +398,7 @@ export default function ProductionSheetPage() {
     const totalBatchWeight = ings.reduce((s, ing) => s + (Number(ing.quantity) || 0), 0);
     const ingredientPayloads = ings.map((ing) => {
       const q = Number(ing.quantity) || 0;
-      const pct = totalBatchWeight > 0 ? Math.round((q / totalBatchWeight) * 100) : 0;
+      const pct = totalBatchWeight > 0 ? Number(((q / totalBatchWeight) * 100).toFixed(2)) : 0;
       return {
         production_sheet_id: psData.id,
         item_id: ing.item_id,
@@ -440,37 +437,40 @@ export default function ProductionSheetPage() {
     }
 
     // 4. UPDATE KITCHEN FINISHED PRODUCTS INVENTORY
+    // Net good yield = actual_yield minus waste/damaged
+    const goodYield = Math.max(0, (Number(form.actual_yield) || 0) - (Number(form.damaged_qty) || 0));
     if (productId) {
       const { data: existingFp } = await supabase.from("kitchen_finished_products").select("*").eq("product_id", productId).single();
       if (existingFp) {
         await supabase.from("kitchen_finished_products")
-          .update({ quantity: Number(existingFp.quantity) + Number(form.actual_yield), last_batch_date: new Date().toISOString() })
+          .update({ quantity: Number(existingFp.quantity) + goodYield, last_batch_date: new Date().toISOString() })
           .eq("id", existingFp.id);
       } else {
         await supabase.from("kitchen_finished_products").insert({
           product_id: productId,
           category_id: categoryId || null,
-          quantity: Number(form.actual_yield),
+          quantity: goodYield,
           unit: form.yield_unit,
           last_batch_date: new Date().toISOString(),
         });
       }
 
       // 4b. Registro del batch de producto terminado (rastreo por production sheet)
-      if (Number(form.actual_yield) > 0) {
+      if (goodYield > 0) {
         await supabase.from("finished_product_batches").insert({
           product_id: productId,
           production_sheet_id: psData.id,
           location: "kitchen",
-          quantity: Number(form.actual_yield),
+          quantity: goodYield,
           unit: form.yield_unit,
         });
       }
     }
 
-    toast(`${productionSheetName(psData)} logged! Batch of ${form.actual_yield} ${form.yield_unit} created in Kitchen.`);
+    toast(`${productionSheetName(psData)} logged! ${goodYield} ${form.yield_unit} added to Kitchen stock${Number(form.damaged_qty) > 0 ? ` (${form.damaged_qty} waste subtracted)` : ""}.`);
     setShowModal(false);
-    setShowZeroStockModal(false);
+    clearForm();
+    setShowKitchenShortageModal(false);
     setPendingSave(false);
     loadData();
   };
@@ -543,6 +543,7 @@ export default function ProductionSheetPage() {
 
       <DataTable
         columns={columns}
+        id="production-history"
         rows={productionSheets}
         empty="No production sheets created yet"
         searchText={(s) => [productionSheetName(s), `PROD-#${s.doc_number}`, s.doc_number, s.recipe?.name, s.recipe?.product?.name].join(" ")}
@@ -633,12 +634,12 @@ export default function ProductionSheetPage() {
             {/* INGREDIENTS LIST & GRN/BATCH SELECTOR */}
             <div className="mt-4 space-y-3">
               <span className="block text-xs font-bold uppercase tracking-wider text-zinc-500">
-                Ingredients · GRN / Batch Selection · Percentages (grams)
+                Ingredients · Delivery Note Selection · Percentages (grams)
               </span>
 
               {form.ingredients.map((ing, idx) => {
                 const q = Number(ing.quantity) || 0;
-                const pct = totalFormWeight > 0 ? Math.round((q / totalFormWeight) * 100) : (ing.percentage || 0);
+                const pct = totalFormWeight > 0 ? Number(((q / totalFormWeight) * 100).toFixed(2)) : (ing.percentage || 0);
                 const itemObj = items.find((i) => i.id === ing.item_id);
                 // Check kitchen stock only (unit-aware)
                 const kitchenMaterial = kitchenRawMaterials.find((k) => k.item_id === ing.item_id);
@@ -646,7 +647,7 @@ export default function ProductionSheetPage() {
                 const reqBase = toBaseUnits(ing.quantity, "gram");
                 const hasNoStock = kitchenAvailBase < reqBase && ing.item_id;
                 // Delivery notes that contain this item
-                const itemDns = deliveryNotes.filter((dn) => (dn.items || []).some((di) => di.item_id === ing.item_id));
+                const itemDns = deliveryNotes.filter((dn) => (dn.items || []).some((di) => String(di.item_id) === String(ing.item_id)));
 
                 return (
                   <div key={idx} className={`flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-start dark:bg-zinc-900 ${hasNoStock ? "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/20" : "border-zinc-200 bg-white dark:border-zinc-800"}`}>
@@ -657,7 +658,7 @@ export default function ProductionSheetPage() {
                           value={ing.item_id}
                           onChange={(v) => {
                             const selected = items.find((i) => i.id === v);
-                            const availDns = deliveryNotes.filter((dn) => (dn.items || []).some((di) => di.item_id === v));
+                            const availDns = deliveryNotes.filter((dn) => (dn.items || []).some((di) => String(di.item_id) === String(v)));
                             setForm((prev) => {
                               const updated = [...prev.ingredients];
                               updated[idx] = {
@@ -677,7 +678,7 @@ export default function ProductionSheetPage() {
                       ) : (
                         <div>
                           <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                            {ing.item_name || itemObj?.name || "Raw Material"}
+                            {ing.item_name || itemObj?.name || "Raw Material"} {itemObj?.unit ? `(${itemObj.unit})` : ""}
                           </div>
                           <span className={`text-[11px] font-medium ${hasNoStock ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
                             {hasNoStock ? `⚠ Low stock: ${formatStock(kitchenMaterial?.quantity || 0, kitchenMaterial?.unit || "gram")} avail` : `${formatStock(kitchenMaterial?.quantity || 0, kitchenMaterial?.unit || "gram")} in kitchen`}
@@ -755,8 +756,9 @@ export default function ProductionSheetPage() {
 
           <div className="flex justify-end gap-2 pt-2">
             <GhostButton onClick={() => setShowModal(false)}>Cancel</GhostButton>
+            <ClearButton onClick={clearForm} />
             <Button onClick={saveProductionSheet} disabled={pendingSave}>
-              {pendingSave ? "Saving…" : "Complete & Deplete Inventory"}
+              {pendingSave ? "Saving…" : "Complete & Update"}
             </Button>
           </div>
         </div>

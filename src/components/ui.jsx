@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const toastContext = createContext(() => {});
@@ -105,6 +105,16 @@ export function GhostButton({ className, ...props }) {
     />
   );
 }
+
+export function ClearButton({ onClick, children = "Clear", className, ...props }) {
+  return (
+    <GhostButton type="button" onClick={onClick} className={className} {...props}>
+      <RotateCcw className="h-3.5 w-3.5" />
+      {children}
+    </GhostButton>
+  );
+}
+
 
 export const inputCls =
   "w-full rounded-lg border-[0.5px] border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-100";

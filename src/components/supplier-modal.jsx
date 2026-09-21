@@ -2,17 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Modal, Button, GhostButton, Field, inputCls, useToast } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, useToast } from "@/components/ui";
+import { usePersistentState } from "@/lib/form-state";
 
 export default function SupplierModal({ open, onClose, onSaved, initial }) {
   const toast = useToast();
-  const [form, setForm] = useState({ name: "", country: "", email: "", rating: 0, map_location: "" });
+  const [form, setForm, clearForm] = usePersistentState("draft.supplier", { name: "", country: "", email: "", rating: 0, map_location: "" });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (open) setForm(initial || { name: "", country: "", email: "", rating: 0, map_location: "" });
-  }, [open, initial]);
+    if (open && initial) setForm(initial);
+  }, [open, initial, setForm]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -36,6 +36,7 @@ export default function SupplierModal({ open, onClose, onSaved, initial }) {
     if (!data) { toast("Failed to save supplier", "error"); return; }
     toast(initial?.id ? "Supplier updated" : "Supplier created");
     onSaved(data);
+    clearForm();
     onClose();
   };
 
@@ -60,6 +61,7 @@ export default function SupplierModal({ open, onClose, onSaved, initial }) {
           <input className={inputCls} value={form.map_location} onChange={set("map_location")} placeholder="https://maps.app.goo.gl/..." />
         </Field>
         <div className="flex justify-end gap-2 pt-2">
+          <ClearButton onClick={clearForm} />
           <GhostButton onClick={onClose}>Cancel</GhostButton>
           <Button onClick={save} disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
         </div>

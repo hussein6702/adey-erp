@@ -27,6 +27,15 @@ create table if not exists public.items (
   created_at timestamptz default now()
 );
 
+-- An item may be purchased from multiple suppliers. supplier_id remains
+-- the optional default supplier for existing screens and legacy data.
+create table if not exists public.item_suppliers (
+  item_id uuid not null references public.items(id) on delete cascade,
+  supplier_id uuid not null references public.suppliers(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (item_id, supplier_id)
+);
+
 -- ---------- grns ----------
 create sequence if not exists public.grn_doc_seq start 1;
 
@@ -94,23 +103,27 @@ create table if not exists public.batches (
 create index if not exists idx_grn_items_grn on public.grn_items(grn_id);
 create index if not exists idx_batches_item on public.batches(item_id);
 create index if not exists idx_items_supplier on public.items(supplier_id);
+create index if not exists idx_item_suppliers_supplier on public.item_suppliers(supplier_id);
 create index if not exists idx_grns_supplier on public.grns(supplier_id);
 
 -- ---------- row level security (open for this internal ERP) ----------
 alter table public.suppliers enable row level security;
 alter table public.items enable row level security;
+alter table public.item_suppliers enable row level security;
 alter table public.grns enable row level security;
 alter table public.grn_items enable row level security;
 alter table public.batches enable row level security;
 
 drop policy if exists "all_access_suppliers" on public.suppliers;
 drop policy if exists "all_access_items" on public.items;
+drop policy if exists "all_access_item_suppliers" on public.item_suppliers;
 drop policy if exists "all_access_grns" on public.grns;
 drop policy if exists "all_access_grn_items" on public.grn_items;
 drop policy if exists "all_access_batches" on public.batches;
 
 create policy "all_access_suppliers" on public.suppliers for all using (true) with check (true);
 create policy "all_access_items" on public.items for all using (true) with check (true);
+create policy "all_access_item_suppliers" on public.item_suppliers for all using (true) with check (true);
 create policy "all_access_grns" on public.grns for all using (true) with check (true);
 create policy "all_access_grn_items" on public.grn_items for all using (true) with check (true);
 create policy "all_access_batches" on public.batches for all using (true) with check (true);

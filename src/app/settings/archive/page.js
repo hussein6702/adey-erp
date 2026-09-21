@@ -54,8 +54,8 @@ export default function ArchivePage() {
   const load = useCallback(async () => {
     const [grns, deliveries, production, transfers, purchases] = await Promise.all([
       supabase.from("grns").select("*, supplier:suppliers(name), grn_items(*, items(name,unit), supplier:suppliers(name))").eq("is_unaccounted", false),
-      supabase.from("delivery_notes").select("*, items:delivery_note_items(*, item:items(name, unit))"),
-      supabase.from("production_sheets").select("*, recipe:recipes(name, product:products(name)), ingredients:production_sheet_ingredients(*, item:items(name, unit), grns(doc_number))"),
+      supabase.from("delivery_notes").select("*, items:delivery_note_items(*, item:items(name, unit), product:products(name, unit))"),
+      supabase.from("production_sheets").select("*, recipe:recipes(name, product:products(name)), ingredients:production_sheet_ingredients(*, item:items(name, unit), delivery_notes(doc_number))"),
       supabase.from("stock_transfer_sheets").select("*, item:items(name, unit), product:products(name, unit)"),
       supabase.from("purchase_requests").select("*, user:users(id, full_name, username, department), reviewed:users!purchase_requests_reviewed_by_fkey(id, full_name)"),
     ]);
@@ -250,7 +250,7 @@ function SummaryCell({ row }) {
   const raw = row.raw;
   const parts = [];
   if (row.type === "grn") parts.push(raw.supplier?.name || "—", `${(raw.grn_items || []).length} item(s)`);
-  if (row.type === "delivery") parts.push(raw.received_by || "—", (raw.items || []).map((li) => li.item?.name).filter(Boolean).slice(0, 2).join(", "));
+  if (row.type === "delivery") parts.push(raw.received_by || "—", (raw.items || []).map((li) => li.product?.name || li.item?.name).filter(Boolean).slice(0, 2).join(", "));
   if (row.type === "production") parts.push(raw.recipe?.name || "—", `${raw.actual_yield} ${raw.yield_unit} produced`);
   if (row.type === "transfer") parts.push(raw.transfer_type === "kitchen_to_shop" ? raw.product?.name : raw.item?.name, `${raw.quantity} ${raw.unit}`);
   if (row.type === "purchase") parts.push(raw.item_name, `${raw.quantity} ${raw.unit}`);
@@ -344,7 +344,7 @@ function DeliveryBody({ d }) {
         <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
           {(d.items || []).map((li, idx) => (
             <tr key={idx}>
-              <td className="px-2 py-2 text-zinc-800 dark:text-zinc-200">{li.item?.name || "—"}</td>
+              <td className="px-2 py-2 text-zinc-800 dark:text-zinc-200">{li.product?.name || li.item?.name || "—"}</td>
               <td className="px-2 py-2 text-right text-zinc-800 dark:text-zinc-200">{li.quantity}</td>
               <td className="px-2 py-2 text-right text-zinc-700 dark:text-zinc-300">{li.unit}</td>
             </tr>
@@ -395,7 +395,7 @@ function ProductionBody({ s }) {
             <th className="px-2 py-2 text-right text-xs font-bold uppercase text-zinc-600 dark:text-zinc-300">Qty</th>
             <th className="px-2 py-2 text-right text-xs font-bold uppercase text-zinc-600 dark:text-zinc-300">Unit</th>
             <th className="px-2 py-2 text-right text-xs font-bold uppercase text-zinc-600 dark:text-zinc-300">%</th>
-            <th className="px-2 py-2 text-right text-xs font-bold uppercase text-zinc-600 dark:text-zinc-300">GRN</th>
+            <th className="px-2 py-2 text-right text-xs font-bold uppercase text-zinc-600 dark:text-zinc-300">Source DN</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -408,7 +408,12 @@ function ProductionBody({ s }) {
               <td className="px-2 py-2 text-right text-zinc-800 dark:text-zinc-200">{ing.quantity}</td>
               <td className="px-2 py-2 text-right text-zinc-700 dark:text-zinc-300">{ing.unit}</td>
               <td className="px-2 py-2 text-right text-zinc-700 dark:text-zinc-300">{ing.percentage}%</td>
-              <td className="px-2 py-2 text-right text-zinc-700 dark:text-zinc-300">{ing.grns ? `#${ing.grns.doc_number}` : "—"}</td>
+              <td className="px-2 py-2 text-right text-zinc-700 dark:text-zinc-300">
+                {(() => {
+                  const dn = Array.isArray(ing.delivery_notes) ? ing.delivery_notes[0] : ing.delivery_notes;
+                  return dn?.doc_number ? `DN-#${dn.doc_number}` : "—";
+                })()}
+              </td>
             </tr>
           ))}
         </tbody>

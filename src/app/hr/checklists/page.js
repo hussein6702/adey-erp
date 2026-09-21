@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Modal, Button, GhostButton, Field, inputCls, Badge, ThreeDots, SearchableSelect, useToast } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, Badge, ThreeDots, SearchableSelect, useToast } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { DEPARTMENTS } from "@/lib/navigation";
 import { RECURRENCE_OPTIONS, DAYS_OF_WEEK, recurrenceLabel } from "@/lib/checklists";
 import { cn } from "@/lib/utils";
 import { Search, ChevronDown } from "lucide-react";
+import { usePersistentState } from "@/lib/form-state";
 
 const emptyForm = () => ({
   name: "",
@@ -41,7 +42,7 @@ export default function ProtocolsPage() {
 
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState(emptyForm());
+  const [form, setForm, clearForm] = usePersistentState("draft.checklist", emptyForm);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -157,6 +158,7 @@ export default function ProtocolsPage() {
         tasks.map((task, idx) => ({ protocol_id: id, task, sort_order: idx }))
       );
       toast(editing ? "Saved changes" : "Protocol created");
+      clearForm();
       setShowModal(false);
       load();
     } catch (e) {
@@ -435,7 +437,8 @@ export default function ProtocolsPage() {
           </label>
 
           <div className="flex justify-end gap-2 pt-2">
-            <GhostButton onClick={() => setShowModal(false)}>Cancel</GhostButton>
+              <ClearButton onClick={clearForm} />
+              <GhostButton onClick={() => setShowModal(false)}>Cancel</GhostButton>
             <Button color="green" onClick={save} disabled={saving}>{saving ? "Saving…" : editing ? "Save changes" : "Create"}</Button>
           </div>
         </div>

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Modal, Button, GhostButton, Field, inputCls, Badge, useToast, SearchableSelect } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, Badge, useToast, SearchableSelect } from "@/components/ui";
 import { CURRENCIES, CURRENCY_SYMBOL, CONTAINERS, UNIT_GROUPS, VAT_RATE } from "@/lib/constants";
+import { usePersistentState } from "@/lib/form-state";
 
 const fmt = (n, c) => `${CURRENCY_SYMBOL[c] || c}${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
@@ -14,28 +15,36 @@ const emptyLine = () => ({
   supplier_name: "", supplier_id: null,
 });
 
+const emptyGrnForm = () => ({
+  step: 1,
+  category: "raw_material",
+  currency: "USD",
+  date: new Date().toISOString().slice(0, 10),
+  lines: [emptyLine()],
+  fsNumber: "",
+  checkedBy: "",
+  receivedBy: "",
+  notes: "",
+});
+
 const stockQty = (l) => Number(l.pcs || 0) * Number(l.qty_per_unit || 0);
 const lineCost = (l) => Number(l.pcs || 0) * Number(l.price_per_piece || 0);
 const lineVat = (l) => (l.vat ? lineCost(l) * VAT_RATE / 100 : 0);
 
 export default function GrnModal({ open, onClose, onSaved, grn, presetItem }) {
   const toast = useToast();
-  const [step, setStep] = useState(1);
-  const [category, setCategory] = useState("raw_material");
-  const [currency, setCurrency] = useState("USD");
-  const [date, setDate] = useState("");
-  
-  useEffect(() => {
-    // Set default date on client side only
-    if (!date) {
-      setDate(new Date().toISOString().slice(0, 10));
-    }
-  }, []);
-  const [lines, setLines] = useState([emptyLine()]);
-  const [fsNumber, setFsNumber] = useState("");
-  const [checkedBy, setCheckedBy] = useState("");
-  const [receivedBy, setReceivedBy] = useState("");
-  const [notes, setNotes] = useState("");
+  const [grnForm, setGrnForm, clearGrnForm] = usePersistentState("draft.grn", emptyGrnForm);
+  const { step, category, currency, date, lines, fsNumber, checkedBy, receivedBy, notes } = grnForm;
+  const setField = (name) => (value) => setGrnForm((form) => ({ ...form, [name]: typeof value === "function" ? value(form[name]) : value }));
+  const setStep = setField("step");
+  const setCategory = setField("category");
+  const setCurrency = setField("currency");
+  const setDate = setField("date");
+  const setLines = setField("lines");
+  const setFsNumber = setField("fsNumber");
+  const setCheckedBy = setField("checkedBy");
+  const setReceivedBy = setField("receivedBy");
+  const setNotes = setField("notes");
   const [suppliers, setSuppliers] = useState([]);
   const [items, setItems] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -77,7 +86,7 @@ export default function GrnModal({ open, onClose, onSaved, grn, presetItem }) {
         supplier_name: sups?.find((s) => s.id === g.supplier_id)?.name || "",
         supplier_id: g.supplier_id,
       })));
-    } else {
+    } else if (!lines.some((line) => line.item_name || line.item_id) && !fsNumber && !checkedBy && !receivedBy && !notes) {
       setCategory("raw_material");
       setCurrency("USD");
       setDate(new Date().toISOString().slice(0, 10));
@@ -101,6 +110,11 @@ export default function GrnModal({ open, onClose, onSaved, grn, presetItem }) {
   const total = subtotal + vat;
 
   const setLine = (i, patch) => setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+
+  const clearForm = () => {
+    clearGrnForm();
+    if (presetItem) setLines([{ ...emptyLine(), item_name: presetItem.name, item_id: presetItem.id, unit: presetItem.unit }]);
+  };
 
   const matches = (name) => items.filter((it) => it.name.toLowerCase().includes(name.toLowerCase()));
   const supMatches = (name) => suppliers.filter((s) => s.name.toLowerCase().includes(name.toLowerCase()));
@@ -224,9 +238,17 @@ export default function GrnModal({ open, onClose, onSaved, grn, presetItem }) {
         vat_amount: lineVat(l),
       });
       if (error) throw error;
+      const supplierId = supIdFor(l.supplier_name);
+      if (supplierId) {
+        await supabase.from("item_suppliers").upsert(
+          { item_id: l.item_id, supplier_id: supplierId },
+          { onConflict: "item_id,supplier_id" }
+        );
+      }
       await supabase.from("batches").insert({ item_id: l.item_id, grn_id: grnId, quantity: stockQty(l), unit: l.unit });
     }
     toast(grn ? "GRN updated" : "GRN created");
+    clearGrnForm();
     onSaved(grnId);
     onClose();
   };
@@ -429,6 +451,7 @@ export default function GrnModal({ open, onClose, onSaved, grn, presetItem }) {
 
           <div className="flex justify-end gap-2">
             <GhostButton onClick={() => setStep(1)}>Back</GhostButton>
+            <ClearButton onClick={clearForm} />
             <Button onClick={beginSave} disabled={saving}>{saving ? "Saving…" : grn ? "Save changes" : "Create GRN"}</Button>
           </div>
         </div>

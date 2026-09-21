@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/data-table";
-import { Modal, Button, GhostButton, Field, inputCls, ThreeDots, Badge, useToast } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, ThreeDots, Badge, useToast } from "@/components/ui";
 import { usePrint, PrintPortal } from "@/components/print";
 import DocHeader from "@/components/doc-header";
+import { usePersistentState } from "@/lib/form-state";
 
 export default function DailyProductionLogPage() {
   const toast = useToast();
@@ -68,7 +69,7 @@ export default function DailyProductionLogPage() {
     );
   };
 
-  const [logForm, setLogForm] = useState({
+  const [logForm, setLogForm, clearLogForm] = usePersistentState("draft.daily-production-log", {
     date: new Date().toISOString().slice(0, 10),
     notes: "",
   });
@@ -167,6 +168,7 @@ export default function DailyProductionLogPage() {
 
       <DataTable
         columns={columns}
+        id="daily-production-history"
         rows={dailySummaryRows}
         empty="No production logs recorded yet"
         searchText={(r) => new Date(r.date).toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
@@ -227,6 +229,7 @@ export default function DailyProductionLogPage() {
           </Field>
 
           <div className="flex justify-end gap-2 pt-2">
+            <ClearButton onClick={clearLogForm} />
             <GhostButton onClick={() => setShowModal(false)}>Cancel</GhostButton>
             <Button
               onClick={() => {

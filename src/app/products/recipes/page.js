@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/data-table";
-import { Modal, Button, GhostButton, Field, inputCls, ThreeDots, Badge, useToast, SearchableSelect } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, ThreeDots, Badge, useToast, SearchableSelect } from "@/components/ui";
+import { usePersistentState } from "@/lib/form-state";
 
 export default function RecipesPage() {
   const toast = useToast();
@@ -17,7 +18,7 @@ export default function RecipesPage() {
   const [editing, setEditing] = useState(null);
 
   // Recipe formulation in percentages (summing to 100%)
-  const [form, setForm] = useState({
+  const [form, setForm, clearForm] = usePersistentState("draft.recipe", {
     name: "",
     product_id: "",
     mold_id: "",
@@ -97,7 +98,7 @@ export default function RecipesPage() {
       ...prev,
       ingredients: prev.ingredients.map((ing) => {
         if (!ing.item_id) return ing;
-        const scaled = Math.round(((Number(ing.percentage) || 0) / currentTotal) * 100);
+        const scaled = Number((((Number(ing.percentage) || 0) / currentTotal) * 100).toFixed(2));
         return { ...ing, percentage: scaled };
       }),
     }));
@@ -105,18 +106,7 @@ export default function RecipesPage() {
 
   const openNewRecipe = () => {
     setEditing(null);
-    setForm({
-      name: "",
-      product_id: products[0]?.id || "",
-      mold_id: products[0]?.mold_id || "",
-      expected_yield_qty: products[0]?.mold?.cavities || 20,
-      expected_yield_unit: products[0]?.unit || "piece",
-      instructions: "",
-      ingredients: [
-        { item_id: items[0]?.id || "", percentage: 60 },
-        { item_id: items[1]?.id || "", percentage: 40 },
-      ],
-    });
+    if (!form.name && !form.instructions) setForm({ name: "", product_id: products[0]?.id || "", mold_id: products[0]?.mold_id || "", expected_yield_qty: products[0]?.mold?.cavities || 20, expected_yield_unit: products[0]?.unit || "piece", instructions: "", ingredients: [{ item_id: items[0]?.id || "", percentage: 60 }, { item_id: items[1]?.id || "", percentage: 40 }] });
     setShowModal(true);
   };
 
@@ -138,7 +128,7 @@ export default function RecipesPage() {
             percentage: ri.percentage != null
               ? Number(ri.percentage)
               : totalQty > 0
-              ? Math.round(((Number(ri.quantity) || 0) / totalQty) * 100)
+              ? Number((((Number(ri.quantity) || 0) / totalQty) * 100).toFixed(2))
               : Number(ri.quantity) || 0,
           }))
         : [{ item_id: "", percentage: 100 }],
@@ -195,6 +185,7 @@ export default function RecipesPage() {
     else toast(editing ? "Recipe updated!" : "Recipe created!");
 
     setShowModal(false);
+    clearForm();
     loadData();
   };
 
@@ -254,7 +245,7 @@ export default function RecipesPage() {
             {ings.slice(0, 3).map((ing, i) => {
               const pct = ing.percentage != null
                 ? ing.percentage
-                : total > 0 ? Math.round((ing.quantity / total) * 100) : ing.quantity;
+                : total > 0 ? Number(((ing.quantity / total) * 100).toFixed(2)) : ing.quantity;
               return (
                 <div key={i} className="flex items-center gap-1.5">
                   <span className="text-zinc-700 dark:text-zinc-300">{ing.item?.name || "—"}</span>
@@ -294,6 +285,7 @@ export default function RecipesPage() {
 
       <DataTable
         columns={columns}
+        id="recipes-history"
         rows={recipes}
         empty="No recipes created yet"
         searchText={(r) => [r.name, r.product?.name, r.mold?.name, (r.ingredients || []).map((i) => i.item?.name).join(" ")].join(" ")}
@@ -474,6 +466,7 @@ export default function RecipesPage() {
           </Field>
 
           <div className="flex justify-end gap-2 pt-2">
+            <ClearButton onClick={clearForm} />
             <GhostButton onClick={() => setShowModal(false)}>Cancel</GhostButton>
             <Button onClick={saveRecipe}>{editing ? "Save Recipe" : "Create Recipe"}</Button>
           </div>
@@ -508,7 +501,7 @@ export default function RecipesPage() {
                     const pct = ing.percentage != null
                       ? Number(ing.percentage)
                       : totalQty > 0
-                      ? Math.round(((Number(ing.quantity) || 0) / totalQty) * 100)
+                      ? Number((((Number(ing.quantity) || 0) / totalQty) * 100).toFixed(2))
                       : Number(ing.quantity) || 0;
                     return (
                       <div key={idx} className="flex items-center justify-between rounded-lg border border-zinc-100 px-3 py-2 text-xs dark:border-zinc-800">
@@ -534,7 +527,7 @@ export default function RecipesPage() {
                       const pct = ing.percentage != null
                         ? Number(ing.percentage)
                         : totalQty > 0
-                        ? Math.round(((Number(ing.quantity) || 0) / totalQty) * 100)
+                        ? Number((((Number(ing.quantity) || 0) / totalQty) * 100).toFixed(2))
                         : Number(ing.quantity) || 0;
                       return (
                         <div

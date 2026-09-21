@@ -5,8 +5,10 @@ import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/data-table";
 import GrnModal from "@/components/grn-modal";
 import StockAdjustModal from "@/components/stock-adjust-modal";
-import { Modal, Button, GhostButton, Field, inputCls, ThreeDots, SupplierFlyout, Badge, useToast, SearchableSelect } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, ThreeDots, SupplierFlyout, Badge, useToast, SearchableSelect } from "@/components/ui";
 import { UNIT_GROUPS, SUB_UNITS } from "@/lib/constants";
+import { usePersistentState } from "@/lib/form-state";
+import { fromBaseUnits, toBaseUnits } from "@/lib/units";
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -24,7 +26,7 @@ export default function StoreStockPage() {
   const [showAdjust, setShowAdjust] = useState(false); // adjust stock (Old Stock)
   const [adjustItem, setAdjustItem] = useState(null);
   const [batchData, setBatchData] = useState({});
-  const [form, setForm] = useState({ name: "", unit: "kg", supplier_id: "", reorder_level: 0, category: "raw_material" });
+  const [form, setForm, clearForm] = usePersistentState("draft.store-item", { name: "", unit: "kg", supplier_id: "", supplier_ids: [], reorder_level: 0, category: "raw_material" });
   const [suppliers, setSuppliers] = useState([]);
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState("all");
@@ -36,11 +38,15 @@ export default function StoreStockPage() {
 
   const load = useCallback(async () => {
     const [{ data: items }, { data: sups }, { data: batches }] = await Promise.all([
-      supabase.from("items").select("*, supplier:suppliers(name)").in("category", ["raw_material", "consumable"]).order("name"),
+      supabase.from("items").select("*").in("category", ["raw_material", "consumable"]).order("name"),
       supabase.from("suppliers").select("id,name").order("name"),
       supabase.from("batches").select("id, item_id, quantity, unit, grn_id, grns(doc_number,grn_date,is_voided,is_unaccounted)").order("created_at", { ascending: false }),
     ]);
-    setItems(items || []);
+    const { data: associations } = await supabase.from("item_suppliers").select("item_id,supplier_id");
+    const associationMap = {};
+    for (const association of associations || []) (associationMap[association.item_id] ||= []).push(association.supplier_id);
+    const supplierMap = Object.fromEntries((sups || []).map((supplier) => [supplier.id, supplier]));
+    setItems((items || []).map((item) => ({ ...item, supplier: supplierMap[item.supplier_id] || null, item_suppliers: (associationMap[item.id] || []).map((supplier_id) => ({ supplier_id })) })));
     setSuppliers(sups || []);
     const grouped = {};
     for (const b of batches || []) (grouped[b.item_id] ||= []).push(b);
@@ -52,7 +58,10 @@ export default function StoreStockPage() {
     load();
   }, [load]);
 
-  const totalStock = (item) => (batchData[item.id] || []).reduce((s, b) => s + Number(b.quantity), 0);
+  const totalStock = (item) => fromBaseUnits(
+    (batchData[item.id] || []).reduce((s, b) => s + toBaseUnits(b.quantity, b.unit), 0),
+    item.unit
+  );
 
   const isLowStock = (item) => Number(item.reorder_level) > 0 && totalStock(item) < Number(item.reorder_level);
 
@@ -74,14 +83,22 @@ export default function StoreStockPage() {
     };
     if (editing) {
       await supabase.from("items").update(payload).eq("id", editing);
+      await supabase.from("item_suppliers").delete().eq("item_id", editing);
+      if (form.supplier_ids.length) {
+        await supabase.from("item_suppliers").insert(form.supplier_ids.map((supplier_id) => ({ item_id: editing, supplier_id })));
+      }
       toast("Item updated");
     } else {
-      await supabase.from("items").insert(payload);
+      const { data: created, error } = await supabase.from("items").insert(payload).select("id").single();
+      if (error) { toast(error.message, "error"); return; }
+      if (form.supplier_ids.length) {
+        await supabase.from("item_suppliers").insert(form.supplier_ids.map((supplier_id) => ({ item_id: created.id, supplier_id })));
+      }
       toast("Item created (stock level 0)");
     }
     setShowModal(false);
     setEditing(null);
-    setForm({ name: "", unit: "kg", supplier_id: "", reorder_level: 0, category: "raw_material" });
+    clearForm();
     load();
   };
 
@@ -175,7 +192,7 @@ export default function StoreStockPage() {
       <ThreeDots
         onEdit={() => {
           setEditing(it.id);
-          setForm({ name: it.name, unit: it.unit, supplier_id: it.supplier_id || "", reorder_level: it.reorder_level, category: it.category || "raw_material" });
+          setForm({ name: it.name, unit: it.unit, supplier_id: it.supplier_id || "", supplier_ids: (it.item_suppliers || []).map((s) => s.supplier_id), reorder_level: it.reorder_level, category: it.category || "raw_material" });
           setShowModal(true);
         }}
         onUpdateStock={() => { setPreset(it); setShowGrn(true); }}
@@ -213,6 +230,7 @@ export default function StoreStockPage() {
 
       <DataTable
         columns={columns}
+        id="store-items-history"
         rows={filteredItems}
         empty="No inventory items yet"
         searchText={(it) => {
@@ -222,7 +240,7 @@ export default function StoreStockPage() {
         searchPlaceholder="Search name, supplier, category…"
         action={
           <div className="flex gap-2">
-            <Button color="green" onClick={() => { setEditing(null); setForm({ name: "", unit: "kg", supplier_id: "", reorder_level: 0, category: "raw_material" }); setShowModal(true); }}>+ New Item</Button>
+            <Button color="green" onClick={() => { setEditing(null); setShowModal(true); }}>+ New Item</Button>
             <Button color="amber" onClick={() => openAdjust(null)}>Adjust Stock</Button>
           </div>
         }
@@ -264,10 +282,25 @@ export default function StoreStockPage() {
               placeholder="Select supplier…"
             />
           </Field>
+          <Field label="Other suppliers">
+            <div className="grid max-h-32 grid-cols-2 gap-2 overflow-y-auto rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+              {suppliers.map((supplier) => (
+                <label key={supplier.id} className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={form.supplier_ids.includes(supplier.id)}
+                    onChange={(e) => setForm((prev) => ({ ...prev, supplier_ids: e.target.checked ? [...prev.supplier_ids, supplier.id] : prev.supplier_ids.filter((id) => id !== supplier.id) }))}
+                  />
+                  {supplier.name}
+                </label>
+              ))}
+            </div>
+          </Field>
           <Field label="Reorder level">
             <input className={inputCls} type="number" min="0" value={form.reorder_level} onChange={(e) => setForm({ ...form, reorder_level: e.target.value })} />
           </Field>
           <div className="flex justify-end gap-2 pt-2">
+            <ClearButton onClick={clearForm} />
             <GhostButton onClick={() => setShowModal(false)}>Cancel</GhostButton>
             <Button onClick={saveItem}>{editing ? "Save" : "Create"}</Button>
           </div>

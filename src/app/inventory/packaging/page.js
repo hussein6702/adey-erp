@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/data-table";
-import { Modal, Button, GhostButton, Field, inputCls, ThreeDots, useToast, SearchableSelect, Badge } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, ThreeDots, useToast, SearchableSelect, Badge } from "@/components/ui";
 import StockAdjustModal from "@/components/stock-adjust-modal";
+import { usePersistentState } from "@/lib/form-state";
+import { fromBaseUnits, toBaseUnits } from "@/lib/units";
 
 const PACKAGING_UNITS = ["pieces", "rolls", "meters", "custom"];
 
@@ -45,10 +47,11 @@ export default function PackagingPage() {
     });
   };
 
-  const [form, setForm] = useState({
+  const [form, setForm, clearForm] = usePersistentState("draft.packaging-item", {
     name: "",
     unit: "pieces",
     supplier_id: "",
+    supplier_ids: [],
     reorder_level: 0,
     category: "packaging",
   });
@@ -57,19 +60,23 @@ export default function PackagingPage() {
     const [{ data: itms }, { data: sups }, { data: btchs }] = await Promise.all([
       supabase
         .from("items")
-        .select("*, supplier:suppliers(name)")
+        .select("*")
         .eq("category", "packaging")
         .order("name"),
       supabase.from("suppliers").select("id, name").order("name"),
       supabase.from("batches").select("id, item_id, quantity, unit"),
     ]);
 
-    setItems(itms || []);
+    const { data: associations } = await supabase.from("item_suppliers").select("item_id,supplier_id");
+    const associationMap = {};
+    for (const association of associations || []) (associationMap[association.item_id] ||= []).push(association.supplier_id);
+    const supplierMap = Object.fromEntries((sups || []).map((supplier) => [supplier.id, supplier]));
+    setItems((itms || []).map((item) => ({ ...item, supplier: supplierMap[item.supplier_id] || null, item_suppliers: (associationMap[item.id] || []).map((supplier_id) => ({ supplier_id })) })));
     setSuppliers(sups || []);
 
     const grouped = {};
     for (const b of btchs || []) {
-      grouped[b.item_id] = (grouped[b.item_id] || 0) + Number(b.quantity);
+      grouped[b.item_id] = (grouped[b.item_id] || 0) + toBaseUnits(b.quantity, b.unit);
     }
     setBatchData(grouped);
   }, []);
@@ -81,7 +88,7 @@ export default function PackagingPage() {
 
   const openNew = () => {
     setEditing(null);
-    setForm({ name: "", unit: "pieces", supplier_id: "", reorder_level: 0, category: "packaging" });
+    clearForm();
     setShowModal(true);
   };
 
@@ -96,6 +103,7 @@ export default function PackagingPage() {
       name: it.name,
       unit: it.unit || "pieces",
       supplier_id: it.supplier_id || "",
+      supplier_ids: (it.item_suppliers || []).map((s) => s.supplier_id),
       reorder_level: it.reorder_level || 0,
       category: "packaging",
     });
@@ -118,15 +126,23 @@ export default function PackagingPage() {
 
     if (editing) {
       const { error } = await supabase.from("items").update(payload).eq("id", editing.id);
+      await supabase.from("item_suppliers").delete().eq("item_id", editing.id);
+      if (form.supplier_ids.length) {
+        await supabase.from("item_suppliers").insert(form.supplier_ids.map((supplier_id) => ({ item_id: editing.id, supplier_id })));
+      }
       if (error) toast(error.message, "error");
       else toast("Packaging item updated");
     } else {
-      const { error } = await supabase.from("items").insert(payload);
+      const { data: created, error } = await supabase.from("items").insert(payload).select("id").single();
+      if (!error && form.supplier_ids.length) {
+        await supabase.from("item_suppliers").insert(form.supplier_ids.map((supplier_id) => ({ item_id: created.id, supplier_id })));
+      }
       if (error) toast(error.message, "error");
       else toast("Packaging item created");
     }
 
     setShowModal(false);
+    clearForm();
     loadData();
   };
 
@@ -140,7 +156,7 @@ export default function PackagingPage() {
     }
   };
 
-  const stockOf = (it) => batchData[it.id] || 0;
+  const stockOf = (it) => fromBaseUnits(batchData[it.id] || 0, it.unit);
   const isLowStock = (it) => Number(it.reorder_level) > 0 && stockOf(it) < Number(it.reorder_level);
 
   const filteredItems = items.filter((it) => {
@@ -229,6 +245,7 @@ export default function PackagingPage() {
 
       <DataTable
         columns={columns}
+        id="packaging-history"
         rows={filteredItems}
         empty="No packaging items found"
         searchText={(it) => [it.name, it.supplier?.name].join(" ")}
@@ -287,8 +304,23 @@ export default function PackagingPage() {
               placeholder="Select supplier…"
             />
           </Field>
+          <Field label="Other Suppliers">
+            <div className="grid max-h-32 grid-cols-2 gap-2 overflow-y-auto rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+              {suppliers.map((supplier) => (
+                <label key={supplier.id} className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={form.supplier_ids.includes(supplier.id)}
+                    onChange={(e) => setForm((prev) => ({ ...prev, supplier_ids: e.target.checked ? [...prev.supplier_ids, supplier.id] : prev.supplier_ids.filter((id) => id !== supplier.id) }))}
+                  />
+                  {supplier.name}
+                </label>
+              ))}
+            </div>
+          </Field>
 
           <div className="flex justify-end gap-2 pt-2">
+            <ClearButton onClick={() => setForm({ name: "", unit: "pieces", supplier_id: "", supplier_ids: [], reorder_level: 0, category: "packaging" })} />
             <GhostButton onClick={() => setShowModal(false)}>Cancel</GhostButton>
             <Button onClick={saveItem}>{editing ? "Save Changes" : "Create Item"}</Button>
           </div>

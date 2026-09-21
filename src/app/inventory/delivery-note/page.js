@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/data-table";
-import { Modal, Button, GhostButton, Field, inputCls, ThreeDots, Badge, useToast, SearchableSelect, SupplierFlyout } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, ThreeDots, Badge, useToast, SearchableSelect, SupplierFlyout } from "@/components/ui";
 import { UNIT_GROUPS } from "@/lib/constants";
 import { usePrint, PrintPortal } from "@/components/print";
 import DocHeader from "@/components/doc-header";
 import { productionSheetName, formatDate } from "@/lib/utils";
 import { toBaseUnits, fromBaseUnits, formatStock, formatQty } from "@/lib/units";
+import { usePersistentState } from "@/lib/form-state";
 
 const CATEGORIES = [
   { key: "raw_material", label: "Raw Materials" },
@@ -66,7 +67,7 @@ export default function DeliveryNotePage() {
           <tbody>
             {(d.items || []).map((li, idx) => (
               <tr key={idx} className="border-b border-zinc-200">
-                <td className="py-2.5 font-medium text-zinc-900">{li.product?.name || li.item?.name || "—"}</td>
+                <td className="py-2.5 font-medium text-zinc-900">{li.product?.name || li.item?.name || items.find((it) => it.id === li.item_id)?.name || "—"}</td>
                 <td className="py-2.5 text-right font-medium text-zinc-900">{li.quantity}</td>
                 <td className="py-2.5 text-right text-zinc-700">{li.unit}</td>
               </tr>
@@ -101,7 +102,7 @@ export default function DeliveryNotePage() {
     );
   };
 
-  const [form, setForm] = useState({
+  const [form, setForm, clearDeliveryForm] = usePersistentState("draft.delivery-note", {
     received_by: "",
     checked_by: "",
     notes: "",
@@ -109,16 +110,17 @@ export default function DeliveryNotePage() {
     lines: [emptyLine()],
   });
 
-  const [fgForm, setFgForm] = useState({ product_id: "", source_sheet_id: "", quantity: 0, unit: "piece" });
+  const [fgForm, setFgForm, clearFgForm] = usePersistentState("draft.delivery-note.finished", { product_id: "", source_sheet_id: "", quantity: 0, unit: "piece" });
   const [staffList, setStaffList] = useState([]);
 
   const load = useCallback(async () => {
-    const [{ data: its }, { data: bts }, { data: dels }, { data: grnData }, { data: kfp }, { data: sheets }, { data: kbt }, { data: users }] = await Promise.all([
+    const [{ data: its }, { data: products }, { data: bts }, { data: dels }, { data: grnData }, { data: kfp }, { data: sheets }, { data: kbt }, { data: users }] = await Promise.all([
       supabase.from("items").select("*").order("name"),
+      supabase.from("products").select("id,name,unit,sku").order("name"),
       supabase.from("batches").select("id, item_id, grn_id, quantity, unit, created_at").gt("quantity", 0).order("created_at", { ascending: true }),
       supabase
         .from("delivery_notes")
-        .select("*, items:delivery_note_items(*, item:items(name, unit), product:products(name, unit, sku), source_production_sheet_id)")
+        .select("*, items:delivery_note_items(*, item:items(name, unit), product:products(name, unit))")
         .order("created_at", { ascending: false }),
       supabase
         .from("grns")
@@ -206,17 +208,16 @@ export default function DeliveryNotePage() {
     });
   };
 
+  const clearForm = () => {
+    setForm({ received_by: "", checked_by: "", notes: "", destination: activeTab === "packaging" ? "shop" : "kitchen", lines: [emptyLine()] });
+    setFgForm({ product_id: "", source_sheet_id: "", quantity: 0, unit: "piece" });
+  };
+
   const removeLine = (i) => setForm((f) => ({ ...f, lines: f.lines.filter((_, idx) => idx !== i) }));
 
   const openNew = () => {
     const firstItem = tabItems[0];
-    setForm({
-      received_by: "",
-      checked_by: "",
-      notes: "",
-      destination: activeTab === "consumable" ? "kitchen" : activeTab === "packaging" ? "shop" : "kitchen",
-      lines: [{ item_id: firstItem?.id || "", quantity: 1, unit: firstItem?.unit || "kg", grn_id: "", batch_id: "" }],
-    });
+    if (!form.received_by && !form.checked_by && !form.notes && form.lines.length === 1 && !form.lines[0].item_id) setForm({ received_by: "", checked_by: "", notes: "", destination: activeTab === "consumable" ? "kitchen" : activeTab === "packaging" ? "shop" : "kitchen", lines: [{ item_id: firstItem?.id || "", quantity: 1, unit: firstItem?.unit || "kg", grn_id: "", batch_id: "" }] });
     setShowModal(true);
   };
 
@@ -277,7 +278,7 @@ export default function DeliveryNotePage() {
       const reqBase = toBaseUnits(l.quantity, l.unit);
       if (reqBase > availBase) {
         const it = items.find((i) => i.id === l.item_id);
-        toast(`Cannot deliver ${l.quantity} ${l.unit} of ${it?.name}. Only ${formatStock(availBase, l.unit)} in store.`, "error");
+        toast(`Cannot deliver ${l.quantity} ${l.unit} of ${it?.name}. Only ${formatStock(fromBaseUnits(availBase, l.unit), l.unit)} in store.`, "error");
         return;
       }
     }
@@ -426,6 +427,7 @@ export default function DeliveryNotePage() {
 
     toast(`Delivery Note #${noteData.doc_number} saved — stock updated`);
     setShowModal(false);
+    clearDeliveryForm();
     load();
   };
 
@@ -532,6 +534,7 @@ export default function DeliveryNotePage() {
 
     toast(`Delivery Note #${noteData.doc_number} saved — ${qty} ${fgForm.unit} moved to Shop`);
     setShowModal(false);
+    clearDeliveryForm(); clearFgForm();
     load();
   };
 
@@ -557,7 +560,7 @@ export default function DeliveryNotePage() {
       key: "stock",
       header: "Available",
       render: (it) => (
-        <span className="font-semibold text-emerald-600 dark:text-emerald-400">{totalStock(it.id)} {it.unit}</span>
+        <span className="font-semibold text-emerald-600 dark:text-emerald-400">{fromBaseUnits(totalStock(it.id), it.unit)} {it.unit}</span>
       ),
     },
   ];
@@ -636,7 +639,7 @@ export default function DeliveryNotePage() {
       header: "Items Delivered",
       render: (d) => (
         <span className="text-xs text-zinc-500">
-          {(d.items || []).map((li) => `${li.quantity} ${li.unit} ${li.product?.name || li.item?.name || ""}`.trim()).join(", ") || "—"}
+          {(d.items || []).map((li) => `${li.quantity} ${li.unit} ${li.product?.name || li.item?.name || items.find((it) => it.id === li.item_id)?.name || ""}`.trim()).join(", ") || "—"}
         </span>
       ),
     },
@@ -676,6 +679,8 @@ export default function DeliveryNotePage() {
     </div>
   );
 
+  const filteredDeliveries = deliveries.filter((d) => activeTab === "all" || d.category === activeTab);
+
   return (
     <div className="p-4 md:p-8">
       <div className="mb-6">
@@ -697,49 +702,56 @@ export default function DeliveryNotePage() {
                 : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
             }`}
           >
-            {c.label} (
-            {c.key === "finished_goods" ? kitchenFp.length : items.filter((it) => it.category === c.key).length})
+            {c.label} ({deliveries.filter((d) => c.key === "finished_goods" ? d.category === c.key : d.category === c.key).length})
           </button>
         ))}
       </div>
 
-      {isFinished ? (
-        <DataTable
-          columns={fgColumns}
-          rows={kitchenFp}
-          empty="No finished goods in Kitchen stock"
-          searchText={(k) => [k.product?.name, k.product?.sku].filter(Boolean).join(" ")}
-          searchPlaceholder="Search product…"
-          action={<Button color="green" onClick={() => openFg()}>+ New Delivery Note</Button>}
-        />
-      ) : (
-        <DataTable
-          columns={stockColumns}
-          rows={tabItems}
-          empty="No items in this category"
-          searchText={(it) => [it.name, it.category].join(" ")}
-          searchPlaceholder="Search name…"
-          action={<Button color="green" onClick={openNew}>+ New Delivery Note</Button>}
-        />
-      )}
+      {/* Primary: Delivery Notes table */}
+      <DataTable
+        columns={historyColumns}
+        id="delivery-history"
+        rows={filteredDeliveries}
+        empty="No delivery notes yet"
+        searchText={(d) => [
+          `DN-#${d.doc_number}`,
+          d.doc_number,
+          d.received_by,
+          d.checked_by,
+          (d.items || []).map((li) => li.product?.name || li.item?.name).join(" "),
+        ].join(" ")}
+        searchPlaceholder="Search doc #, name, received/checked by…"
+        sortByDate={(d) => d.created_at}
+        action={isFinished
+          ? <Button color="green" onClick={() => openFg()}>+ New Delivery Note</Button>
+          : <Button color="green" onClick={openNew}>+ New Delivery Note</Button>
+        }
+      />
 
-      <div className="mt-8">
-        <h2 className="mb-3 text-lg font-bold text-zinc-900 dark:text-white">Delivery History</h2>
-        <DataTable
-          columns={historyColumns}
-          rows={deliveries}
-          empty="No delivery notes yet"
-          searchText={(d) => [
-            `DN-#${d.doc_number}`,
-            d.doc_number,
-            d.received_by,
-            d.checked_by,
-            (d.items || []).map((li) => li.product?.name || li.item?.name).join(" "),
-          ].join(" ")}
-          searchPlaceholder="Search doc #, name, received/checked by…"
-          sortByDate={(d) => d.created_at}
-        />
-      </div>
+      {/* Collapsible: Store Stock Reference */}
+      <details className="mt-8 group">
+        <summary className="mb-3 cursor-pointer text-lg font-bold text-zinc-900 dark:text-white select-none">
+          {isFinished ? "Kitchen Finished Goods Stock" : "Store Stock Reference"}
+          <span className="ml-2 text-sm font-normal text-zinc-400">▸ click to expand</span>
+        </summary>
+        {isFinished ? (
+          <DataTable
+            columns={fgColumns}
+            rows={kitchenFp}
+            empty="No finished goods in Kitchen stock"
+            searchText={(k) => [k.product?.name, k.product?.sku].filter(Boolean).join(" ")}
+            searchPlaceholder="Search product…"
+          />
+        ) : (
+          <DataTable
+            columns={stockColumns}
+            rows={tabItems}
+            empty="No items in this category"
+            searchText={(it) => [it.name, it.category].join(" ")}
+            searchPlaceholder="Search name…"
+          />
+        )}
+      </details>
 
       {/* New Delivery Note / Finished Goods Modal */}
       <Modal
@@ -847,6 +859,7 @@ export default function DeliveryNotePage() {
             </Field>
 
             <div className="flex justify-end gap-2 pt-2">
+              <ClearButton onClick={clearForm} />
               <GhostButton onClick={() => setShowModal(false)}>Cancel</GhostButton>
               <Button color="purple" onClick={saveFinishedGoods}>Save Delivery Note</Button>
             </div>
@@ -930,7 +943,7 @@ export default function DeliveryNotePage() {
                             const it = tabItems.find((i) => i.id === v);
                             setLine(idx, { item_id: v, unit: it?.unit || l.unit, grn_id: "", batch_id: "" });
                           }}
-                          options={[{ value: "", label: "Select item…" }, ...tabItems.map((it) => ({ value: it.id, label: `${it.name} (${formatStock(totalStock(it.id), it.unit)} avail)` }))]}
+                          options={[{ value: "", label: "Select item…" }, ...tabItems.map((it) => ({ value: it.id, label: `${it.name} (${formatStock(fromBaseUnits(totalStock(it.id), it.unit), it.unit)} avail)` }))]}
                           placeholder="Select item…"
                         />
                       </div>
@@ -974,7 +987,7 @@ export default function DeliveryNotePage() {
                                   const gAvailBase = gBatches.reduce((s, b) => s + toBaseUnits(b.quantity, b.unit), 0);
                                   return {
                                     value: g.id,
-                                    label: `GRN #${g.doc_number} (${new Date(g.grn_date).toLocaleDateString()}) · ${formatStock(gAvailBase, l.unit)} remaining`,
+                                    label: `GRN #${g.doc_number} (${new Date(g.grn_date).toLocaleDateString()}) · ${formatStock(fromBaseUnits(gAvailBase, l.unit), l.unit)} remaining`,
                                   };
                                 }),
                               ]}
@@ -1002,7 +1015,7 @@ export default function DeliveryNotePage() {
                         {hasGrnShortage && (
                           <div className="flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                             <div>
-                              <span className="font-semibold">Selected GRN only has {formatStock(grnAvailBase, l.unit)}</span> (you requested {l.quantity} {l.unit}).
+                              <span className="font-semibold">Selected GRN only has {formatStock(fromBaseUnits(grnAvailBase, l.unit), l.unit)}</span> (you requested {l.quantity} {l.unit}).
                             </div>
                             <Button
                               type="button"
@@ -1027,6 +1040,7 @@ export default function DeliveryNotePage() {
             </Field>
 
             <div className="flex justify-end gap-2 pt-2">
+              <ClearButton onClick={clearForm} />
               <GhostButton onClick={() => setShowModal(false)}>Cancel</GhostButton>
               <Button onClick={saveDelivery}>Save Delivery Note</Button>
             </div>
@@ -1072,7 +1086,7 @@ export default function DeliveryNotePage() {
                     : null;
                   return (
                     <div key={idx} className="flex items-center justify-between rounded-lg border border-zinc-100 px-3 py-2 text-xs dark:border-zinc-800">
-                      <span className="font-medium text-zinc-800 dark:text-zinc-200">{li.product?.name || li.item?.name}</span>
+                      <span className="font-medium text-zinc-800 dark:text-zinc-200">{li.product?.name || li.item?.name || items.find((it) => it.id === li.item_id)?.name || "—"}</span>
                       <span className="font-mono">{li.quantity} {li.unit}</span>
                       {src && (
                         <span className="ml-2 font-mono text-[11px] text-purple-500">{productionSheetName(src)}</span>

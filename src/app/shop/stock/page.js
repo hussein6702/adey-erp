@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/data-table";
-import { Badge, useToast, SupplierFlyout, ThreeDots, Modal, Button, GhostButton, Field, inputCls } from "@/components/ui";
+import { Badge, useToast, SupplierFlyout, ThreeDots, Modal, Button, GhostButton, ClearButton, Field, inputCls } from "@/components/ui";
 import { productionSheetName, formatDate } from "@/lib/utils";
 
 export default function ShopStockPage() {
@@ -405,6 +405,7 @@ export default function ShopStockPage() {
         <h2 className="mb-3 text-lg font-bold text-zinc-900 dark:text-white">Recent Sales / Stock Clearances</h2>
         <DataTable
           columns={salesColumns}
+          id="shop-sales-history"
           rows={sales}
           empty="No sales recorded yet"
           searchText={(s) => [s.product?.name, s.item?.name, s.note, saleTypeLabel[s.item_type]].join(" ")}
@@ -439,6 +440,7 @@ export default function ShopStockPage() {
             </Field>
 
             <div className="flex justify-end gap-2 pt-2">
+              <ClearButton onClick={() => { setSaleQty(0); setSaleNote(""); }} />
               <GhostButton onClick={() => setSaleTarget(null)}>Cancel</GhostButton>
               <Button color="rose" onClick={recordSale}>Record Sale</Button>
             </div>

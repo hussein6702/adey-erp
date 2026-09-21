@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/data-table";
-import { Modal, Button, GhostButton, Field, inputCls, ThreeDots, Badge, useToast } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, ThreeDots, Badge, useToast } from "@/components/ui";
+import { usePersistentState } from "@/lib/form-state";
 
 export default function MoldsPage() {
   const toast = useToast();
@@ -11,7 +12,7 @@ export default function MoldsPage() {
   const [showModal, setShowModal] = useState(false);
   const [viewing, setViewing] = useState(null);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: "", code: "", cavities: 20, description: "" });
+  const [form, setForm, clearForm] = usePersistentState("draft.mold", { name: "", code: "", cavities: 20, description: "" });
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
@@ -30,7 +31,7 @@ export default function MoldsPage() {
 
   const openNew = () => {
     setEditing(null);
-    setForm({ name: "", code: "", cavities: 20, description: "" });
+    if (!form.name && !form.code && !form.description) clearForm();
     setShowModal(true);
   };
 
@@ -64,6 +65,7 @@ export default function MoldsPage() {
     }
 
     setShowModal(false);
+    clearForm();
     load();
   };
 
@@ -132,6 +134,7 @@ export default function MoldsPage() {
 
       <DataTable
         columns={columns}
+        id="molds-history"
         rows={molds}
         empty="No molds configured yet"
         searchText={(m) => [m.name, m.code, m.description, String(m.cavities)].join(" ")}
@@ -182,6 +185,7 @@ export default function MoldsPage() {
           </Field>
 
           <div className="flex justify-end gap-2 pt-2">
+            <ClearButton onClick={clearForm} />
             <GhostButton onClick={() => setShowModal(false)}>Cancel</GhostButton>
             <Button onClick={saveMold}>{editing ? "Save Changes" : "Create Mold"}</Button>
           </div>

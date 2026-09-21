@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/data-table";
-import { Modal, Button, GhostButton, Field, inputCls, Badge, useToast, SupplierFlyout } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, Badge, useToast, SupplierFlyout } from "@/components/ui";
 import { productionSheetName, formatDate } from "@/lib/utils";
 import { formatStock } from "@/lib/units";
 
@@ -32,11 +32,11 @@ export default function KitchenInventoryPage() {
         .order("last_batch_date", { ascending: false }),
       supabase
         .from("kitchen_raw_materials")
-        .select("*, item:items(id, name, unit, category, supplier:suppliers(name))")
+        .select("*, item:items(id, name, unit, category)")
         .order("last_transferred_at", { ascending: false }),
       supabase
         .from("delivery_notes")
-        .select("*, items:delivery_note_items(*, item:items(name, unit))")
+        .select("*, items:delivery_note_items(*, item:items(name, unit), product:products(name, unit))")
         .order("created_at", { ascending: false }),
       supabase
         .from("finished_product_batches")
@@ -208,7 +208,7 @@ export default function KitchenInventoryPage() {
       header: "Items Delivered",
       render: (d) => (
         <span className="text-xs text-zinc-500">
-          {(d.items || []).map((li) => `${li.quantity} ${li.unit} ${li.item?.name || ""}`).join(", ") || "—"}
+          {(d.items || []).map((li) => `${li.quantity} ${li.unit} ${li.product?.name || li.item?.name || ""}`).join(", ") || "—"}
         </span>
       ),
     },
@@ -307,15 +307,14 @@ export default function KitchenInventoryPage() {
       ) : (
         <DataTable
           columns={deliveryColumns}
+          id="kitchen-delivery-history"
           rows={kitchenDeliveries}
           empty="No deliveries to the kitchen yet"
           searchText={(d) => [`DN-#${d.doc_number}`, d.doc_number, d.received_by, d.checked_by, (d.items || []).map((li) => li.item?.name).join(" ")].join(" ")}
           searchPlaceholder="Search doc #, name, received/checked by…"
           sortByDate={(d) => d.created_at}
           action={
-            <Link href="/inventory/delivery-note">
-              <Button color="green">+ New Delivery Note</Button>
-            </Link>
+            <Link href="/inventory/delivery-note"><Button color="green">+ New Delivery Note</Button></Link>
           }
         />
       )}
@@ -339,6 +338,7 @@ export default function KitchenInventoryPage() {
             </Field>
 
             <div className="flex justify-end gap-2 pt-2">
+              <ClearButton onClick={() => setQtyForm({ quantity: 0 })} />
               <GhostButton onClick={() => setEditingItem(null)}>Cancel</GhostButton>
               <Button onClick={updateFinishedQty}>Save Stock</Button>
             </div>

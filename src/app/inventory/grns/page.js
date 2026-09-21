@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { usePrint, PrintPortal } from "@/components/print";
 import DocHeader from "@/components/doc-header";
 import { LayoutGrid, Table } from "lucide-react";
-import { toBaseUnits, formatStock, formatQty } from "@/lib/units";
+import { toBaseUnits, fromBaseUnits, formatStock, formatQty } from "@/lib/units";
 
 const fmt = (n, c) => `${CURRENCY_SYMBOL[c] || c}${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
@@ -32,12 +32,11 @@ export default function GrnsPage() {
     printDoc(
       <div className="max-w-3xl bg-white px-8 py-6">
         <DocHeader
-          title="Goods Received Note"
+          title="Goods Receiving Note"
           docNumber={`GRN #${g.doc_number}`}
           date={new Date(g.grn_date).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
         />
         <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm sm:grid-cols-4">
-          <div><span className="block text-xs uppercase text-zinc-400">Supplier</span><span className="font-medium text-zinc-900">{g.supplier?.name || "—"}</span></div>
           <div><span className="block text-xs uppercase text-zinc-400">Currency</span><span className="font-medium text-zinc-900">{g.currency || "—"}</span></div>
           <div><span className="block text-xs uppercase text-zinc-400">FS #</span><span className="font-medium text-zinc-900">{g.fs_number || "—"}</span></div>
           <div><span className="block text-xs uppercase text-zinc-400">Date</span><span className="font-medium text-zinc-900">{new Date(g.grn_date).toLocaleDateString()}</span></div>
@@ -218,13 +217,18 @@ export default function GrnsPage() {
     },
     {
       key: "sup", header: "Supplier",
-      render: (g) => (
-        <SupplierFlyout data={(g.grn_items || []).map((it) => ({
+      render: (g) => {
+        const supplierNames = [...new Set((g.grn_items || []).map((it) => it.supplier?.name || g.supplier?.name).filter(Boolean))];
+        return (
+          <SupplierFlyout data={(g.grn_items || []).map((it) => ({
           supplier: it.supplier?.name || "",
           item: it.items?.name || "",
           detail: [it.total_qty, it.unit].filter(Boolean).join(" "),
-        }))} />
-      ),
+          }))}>
+            <span className="text-zinc-700 dark:text-zinc-300">{supplierNames.join(", ") || "—"}</span>
+          </SupplierFlyout>
+        );
+      },
     },
     {
       key: "stock_status", header: "Stock Remaining",
@@ -237,7 +241,7 @@ export default function GrnsPage() {
           <div className="flex flex-col gap-1 text-xs">
             <div className="flex items-center gap-1.5">
               <Badge color="amber">{remainingPct}% Left</Badge>
-              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">{formatStock(remainingBase, "kg")}</span>
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">{formatStock(remainingBase, "gram")}</span>
             </div>
             <div className="h-1.5 w-24 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
               <div className="h-full bg-amber-500" style={{ width: `${remainingPct}%` }} />
@@ -312,6 +316,7 @@ export default function GrnsPage() {
 
       <DataTable
         columns={[thFirst, ...columns.slice(1)]}
+        id="grn-history"
         rows={grns}
         empty="No GRNs yet"
         cardView={viewMode === "cards"}
@@ -377,7 +382,6 @@ export default function GrnsPage() {
               </div>
             )}
             <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-              <div><div className="text-xs uppercase text-zinc-400">Supplier</div><div className="text-zinc-800 dark:text-zinc-200">{viewing.supplier?.name || "—"}</div></div>
               <div><div className="text-xs uppercase text-zinc-400">Date</div><div className="flex items-center gap-1.5 text-zinc-800 dark:text-zinc-200">{new Date(viewing.grn_date).toLocaleDateString()}{viewing.is_backdated && <Badge color="yellow">Backdated</Badge>}</div></div>
               <div><div className="text-xs uppercase text-zinc-400">Currency</div><div className="text-zinc-800 dark:text-zinc-200">{viewing.currency}</div></div>
               <div><div className="text-xs uppercase text-zinc-400">FS #</div><div className="text-zinc-800 dark:text-zinc-200">{viewing.fs_number || "—"}</div></div>
@@ -392,7 +396,7 @@ export default function GrnsPage() {
                   <div className="flex items-center justify-between">
                     <span className="font-bold uppercase tracking-wider text-zinc-500">GRN Stock Depletion Status</span>
                     <Badge color={remainingBase <= 0 ? "zinc" : remainingBase >= initialBase ? "green" : "amber"}>
-                      {remainingBase <= 0 ? "Fully Depleted (0 left)" : `${remainingPct}% In Store (${formatStock(remainingBase, "kg")} remaining)`}
+                      {remainingBase <= 0 ? "Fully Depleted (0 left)" : `${remainingPct}% In Store (${formatStock(remainingBase, "gram")} remaining)`}
                     </Badge>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800 flex">
@@ -400,8 +404,8 @@ export default function GrnsPage() {
                     <div className="h-full bg-zinc-400 dark:bg-zinc-600 transition-all" style={{ width: `${depletedPct}%` }} title={`Depleted: ${depletedPct}%`} />
                   </div>
                   <div className="flex justify-between text-[11px] text-zinc-500">
-                    <span>Delivered/Used: <strong>{formatStock(depletedBase, "kg")}</strong></span>
-                    <span>Remaining in Store: <strong>{formatStock(remainingBase, "kg")}</strong></span>
+                    <span>Delivered/Used: <strong>{formatStock(depletedBase, "gram")}</strong></span>
+                    <span>Remaining in Store: <strong>{formatStock(remainingBase, "gram")}</strong></span>
                   </div>
                 </div>
               );
@@ -431,7 +435,7 @@ export default function GrnsPage() {
                       <td className="px-2 py-2.5 text-zinc-800 dark:text-zinc-200">{li.total_qty} {li.unit}</td>
                       <td className="px-2 py-2.5 text-zinc-800 dark:text-zinc-200">
                         <Badge color={remainingBase <= 0 ? "zinc" : "green"}>
-                          {formatStock(remainingBase, li.unit)} left
+                          {formatStock(fromBaseUnits(remainingBase, li.unit), li.unit)} left
                         </Badge>
                       </td>
                       <td className="px-2 py-2.5 text-right font-medium text-zinc-900 dark:text-zinc-100">{fmt(li.line_total, viewing.currency)}</td>

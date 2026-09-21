@@ -150,8 +150,8 @@ function InventoryAnalytics() {
       supabase.from("grn_items").select("*, items(name,unit), supplier:suppliers(name), grns(doc_number,grn_date,currency,is_voided)").order("id"),
       supabase.from("production_sheet_ingredients").select("*, item:items(name,unit)"),
       supabase.from("production_sheets").select("*, recipe:recipes(name,product:products(name))").order("created_at"),
-      supabase.from("items").select("id,name,unit,supplier:suppliers(name)").order("name"),
-      supabase.from("grns").select("id,doc_number,grn_date,currency,total,supplier:suppliers(name),is_voided,grn_items(*,supplier:suppliers(name),items(name,supplier:suppliers(name)))").eq("is_voided", false).order("grn_date"),
+      supabase.from("items").select("id,name,unit,supplier_id").order("name"),
+      supabase.from("grns").select("id,doc_number,grn_date,currency,total,supplier:suppliers(name),is_voided,grn_items(*,supplier:suppliers(name),items(name))").eq("is_voided", false).order("grn_date"),
       supabase.from("suppliers").select("id,name"),
     ]);
 

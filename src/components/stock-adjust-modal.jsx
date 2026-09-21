@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Modal, Button, GhostButton, Field, inputCls, useToast, SearchableSelect } from "@/components/ui";
+import { Modal, Button, GhostButton, ClearButton, Field, inputCls, useToast, SearchableSelect } from "@/components/ui";
+import { usePersistentState } from "@/lib/form-state";
 import { applyStockAdjustment } from "@/lib/stock";
 
 const ADJ_UNITS = [
@@ -18,20 +19,17 @@ const ADJ_UNITS = [
 
 export default function StockAdjustModal({ open, onClose, items = [], presetItem = null, onSaved }) {
   const toast = useToast();
-  const [itemId, setItemId] = useState("");
-  const [delta, setDelta] = useState("");
-  const [unit, setUnit] = useState("");
-  const [reason, setReason] = useState("");
+  const [itemId, setItemId, clearItemId] = usePersistentState("draft.stock-adjust.item", "");
+  const [delta, setDelta, clearDelta] = usePersistentState("draft.stock-adjust.delta", "");
+  const [unit, setUnit, clearUnit] = usePersistentState("draft.stock-adjust.unit", "");
+  const [reason, setReason, clearReason] = usePersistentState("draft.stock-adjust.reason", "");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setItemId(presetItem?.id || "");
-      setUnit(presetItem?.unit || "gram");
-      setDelta("");
-      setReason("");
+      if (presetItem) { setItemId(presetItem.id); setUnit(presetItem.unit || "gram"); }
     }
-  }, [open, presetItem]);
+  }, [open, presetItem, setItemId, setUnit]);
 
   const selectedItem = items.find((i) => i.id === itemId);
 
@@ -57,6 +55,7 @@ export default function StockAdjustModal({ open, onClose, items = [], presetItem
       toast(`${d > 0 ? "Added" : "Reduced"} ${Math.abs(d)} ${unit} as Old Stock`);
       setSaving(false);
       onSaved?.();
+      clearItemId(); clearDelta(); clearUnit(); clearReason();
       onClose?.();
     } catch (e) {
       toast(e?.message || "Adjustment failed", "error");
@@ -117,6 +116,7 @@ export default function StockAdjustModal({ open, onClose, items = [], presetItem
         </Field>
 
         <div className="flex justify-end gap-2 pt-2">
+          <ClearButton onClick={() => { clearItemId(); clearDelta(); clearUnit(); clearReason(); }} />
           <GhostButton onClick={onClose}>Cancel</GhostButton>
           <Button color="green" onClick={save} disabled={saving}>
             {saving ? "Saving…" : "Apply Adjustment"}
